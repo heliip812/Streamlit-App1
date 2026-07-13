@@ -3,7 +3,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from analytics import drop_outliers
+from analytics import drop_outliers, sample_for_scatter
 from config import RATES_LOOKBACK
 from data.sources import get_dtcc_trades
 from ui import empty_state, metric_row, render, sidebar_date_and_lookback
@@ -104,13 +104,14 @@ curve_points = (
 if curve_df.empty:
     st.write(f"No fixed-rate levels available for {currency} in this window.")
 else:
+    scatter_sample = sample_for_scatter(curve_df)
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
-            x=curve_df["tenor_years"],
-            y=curve_df["level"],
+            x=scatter_sample["tenor_years"],
+            y=scatter_sample["level"],
             mode="markers",
-            name="Individual trades",
+            name="Individual trades" if len(scatter_sample) == len(curve_df) else f"Individual trades (sample of {len(scatter_sample):,})",
             marker=dict(color=CATEGORICAL[0], size=6, opacity=0.35),
         )
     )

@@ -1,6 +1,6 @@
 import pandas as pd
 
-from analytics import drop_outliers
+from analytics import drop_outliers, sample_for_scatter
 
 
 def test_drop_outliers_removes_extreme_sentinel_value():
@@ -23,3 +23,19 @@ def test_drop_outliers_keeps_tight_cluster_mostly_unchanged():
 
 def test_drop_outliers_handles_empty_series():
     assert drop_outliers(pd.Series(dtype=float)).empty
+
+
+def test_sample_for_scatter_caps_large_frames():
+    df = pd.DataFrame({"x": range(10000)})
+
+    out = sample_for_scatter(df, max_points=500)
+
+    assert len(out) == 500
+
+
+def test_sample_for_scatter_leaves_small_frames_untouched():
+    df = pd.DataFrame({"x": range(50)})
+
+    out = sample_for_scatter(df, max_points=500)
+
+    assert len(out) == 50

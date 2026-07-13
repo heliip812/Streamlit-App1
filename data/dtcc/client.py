@@ -32,14 +32,18 @@ import requests
 from .. import s3_cache
 from ..constants import DTCC_BASE_URL, NEW_TRADE_ACTION_TYPES
 
+# "Action type" is needed only to filter to new trades below — every row
+# in the result is guaranteed NEWT by construction, so it's dropped before
+# conversion to pandas rather than carried (as a now-constant, useless
+# column) through the rest of the pipeline. "Asset Class" and "Block trade
+# election indicator" are fetched by neither this module nor normalize.py,
+# so they're left out entirely rather than parsed and immediately discarded.
 COLUMNS = [
     "Action type",
-    "Asset Class",
     "Execution Timestamp",
     "Effective Date",
     "Expiration Date",
     "Cleared",
-    "Block trade election indicator",
     "Notional amount-Leg 1",
     "Notional amount-Leg 2",
     "Notional currency-Leg 1",
@@ -125,11 +129,11 @@ def fetch_day(asset_class_code: str, day: date) -> pd.DataFrame:
     # testing, and (unlike the default conversion) the result is actually
     # freed by `del` afterward rather than lingering in Arrow's pool for the
     # rest of the process's life.
-    table = pa.concat_tables(kept_batches)
+    table = pa.concat_tables(kept_batches).drop_columns(["Action type"])
     del kept_batches
     df = table.to_pandas(split_blocks=True, self_destruct=True)
     del table
-    for col in ("Asset Class", "Cleared", "Notional currency-Leg 1", "Notional currency-Leg 2", "Block trade election indicator"):
+    for col in ("Cleared", "Notional currency-Leg 1", "Notional currency-Leg 2"):
         if col in df.columns:
             df[col] = df[col].astype("category")
 

@@ -73,7 +73,14 @@ def normalize(df: pd.DataFrame) -> pd.DataFrame:
 
     out["notional_local"] = notional_1
     out["notional_usd_approx"] = notional_1.where(ccy_1 == "USD", notional_2.where(ccy_2 == "USD"))
-    out["is_new_trade"] = out["Action type"].isin(NEW_TRADE_ACTION_TYPES)
+    # client.py's fetch already filters to new trades only and drops "Action
+    # type" as redundant afterward — but fall back to reading it if present,
+    # so this still behaves correctly against an older cached frame (S3) or
+    # a hand-built one (tests) that still carries the raw column.
+    if "Action type" in out.columns:
+        out["is_new_trade"] = out["Action type"].isin(NEW_TRADE_ACTION_TYPES)
+    else:
+        out["is_new_trade"] = True
     out["is_capped_notional"] = raw_notional_1.astype(str).str.contains(r"\+", regex=True)
     out["is_notional_masked"] = notional_1.isna() & raw_notional_1.notna()
 
@@ -94,7 +101,33 @@ def normalize(df: pd.DataFrame) -> pd.DataFrame:
     underlier = out.get("UPI Underlier Name", pd.Series(dtype=object)).astype(str).str.upper()
     out["is_index"] = underlier.str.contains("|".join(CDS_INDEX_PATTERNS), na=False)
 
-    return out
+    # Every page reads only these raw columns directly; everything else
+    # DTCC sends (Action type, Fixed rate/Spread/Price/Exchange rate,
+    # original date strings, Notional amount, etc.) has already been
+    # captured in the derived columns above and is otherwise dead weight —
+    # dropping it here roughly halves the frame's memory footprint, which
+    # matters once a wide lookback window means holding hundreds of
+    # thousands of rows at once.
+    keep = [
+        "_trade_date",
+        "Cleared",
+        "Notional currency-Leg 1",
+        "Notional currency-Leg 2",
+        "UPI Underlier Name",
+        "notional_local",
+        "notional_usd_approx",
+        "is_new_trade",
+        "is_capped_notional",
+        "is_notional_masked",
+        "execution_ts",
+        "effective_date",
+        "expiration_date",
+        "tenor_days",
+        "tenor_years",
+        "level",
+        "is_index",
+    ]
+    return out[[c for c in keep if c in out.columns]]
 
 
 def get_recent_trades(asset_class_code: str, end_day: date, lookback_days: int) -> pd.DataFrame:
