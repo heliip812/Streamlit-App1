@@ -1,4 +1,6 @@
 streamlit>=1.38
 pandas>=2.2
+pyarrow>=17.0
 requests>=2.32
 plotly>=5.24
+boto3>=1.34

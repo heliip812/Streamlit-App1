@@ -19,7 +19,7 @@ st.caption(
 with st.sidebar:
     st.header("Settings")
     as_of = st.date_input("As of date", value=date.today() - timedelta(days=1))
-    lookback_days = st.slider("Lookback window (calendar days)", min_value=3, max_value=30, value=5)
+    lookback_days = st.slider("Lookback window (calendar days)", min_value=3, max_value=21, value=3)
     st.divider()
     st.markdown(
         "**Sources**\n\n"

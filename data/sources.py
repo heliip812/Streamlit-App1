@@ -8,7 +8,6 @@ free ones behind the same function signatures.
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
 import pandas as pd
@@ -18,19 +17,26 @@ from . import cftc, dtcc
 from .constants import DTCC_ASSET_CLASSES
 
 
-@st.cache_data(ttl=3600, show_spinner="Fetching DTCC swap data repository trades...")
+# Streamlit's cache keeps every distinct call's result resident until its
+# TTL expires or max_entries is exceeded — a user browsing through several
+# pages (each with its own asset class/date/lookback combination) can
+# otherwise accumulate multiple large frames simultaneously and push total
+# memory past Streamlit Cloud's 1GB per-app limit even though any single
+# page load is individually well within it. max_entries bounds that.
+@st.cache_data(ttl=3600, max_entries=1, show_spinner="Fetching DTCC swap data repository trades...")
 def get_dtcc_trades(asset_class_code: str, end_day: date, lookback_days: int) -> pd.DataFrame:
     return dtcc.get_recent_trades(asset_class_code, end_day, lookback_days)
 
 
-@st.cache_data(ttl=3600, show_spinner="Fetching CFTC positioning data...")
+@st.cache_data(ttl=3600, max_entries=2, show_spinner="Fetching CFTC positioning data...")
 def get_cftc_positioning(contract_names: tuple[str, ...], weeks: int) -> pd.DataFrame:
     return cftc.fetch_positioning(list(contract_names), weeks)
 
 
-@st.cache_data(ttl=3600, show_spinner="Fetching cross-asset overview...")
+@st.cache_data(ttl=3600, max_entries=1, show_spinner="Fetching cross-asset overview...")
 def get_all_asset_classes(end_day: date, lookback_days: int) -> dict[str, pd.DataFrame]:
-    codes = list(DTCC_ASSET_CLASSES.items())
-    with ThreadPoolExecutor(max_workers=len(codes)) as pool:
-        results = pool.map(lambda item: dtcc.get_recent_trades(item[0], end_day, lookback_days), codes)
-    return {label: df for (_, label), df in zip(codes, results)}
+    # Deliberately sequential across asset classes (each asset class still
+    # fetches its own days concurrently): running all five concurrently
+    # stacks their peak memory on top of each other and was observed to
+    # spike well past Streamlit Cloud's 1GB per-app limit.
+    return {label: dtcc.get_recent_trades(code, end_day, lookback_days) for code, label in DTCC_ASSET_CLASSES.items()}
