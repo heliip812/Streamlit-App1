@@ -38,3 +38,18 @@ CFTC_TFF_CONTRACTS = [
     "E-MINI S&P 500",
     "NASDAQ-100 CONSOLIDATED",
 ]
+
+# CFTC public reporting (Socrata) — Disaggregated report, futures-only.
+# Covers physical commodities, which the TFF report above does not.
+CFTC_DISAGG_RESOURCE_ID = "72hh-3qpy"
+
+CFTC_DISAGG_CONTRACTS = [
+    "WTI",
+    "NATURAL GAS",
+    "GOLD",
+    "SILVER",
+    "COPPER",
+    "CORN",
+    "SOYBEAN",
+    "WHEAT",
+]

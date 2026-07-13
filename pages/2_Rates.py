@@ -1,7 +1,9 @@
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
+from analytics import drop_outliers
 from config import RATES_LOOKBACK
 from data.sources import get_dtcc_trades
 from ui import empty_state, metric_row, render, sidebar_date_and_lookback
@@ -70,21 +72,58 @@ with col_right:
     )
     render(fig)
 
-st.subheader("Fixed rate levels by tenor")
-scatter_df = new_trades.dropna(subset=["level", "tenor_years"])
-scatter_df = scatter_df[(scatter_df["tenor_years"] > 0) & (scatter_df["tenor_years"] < 51)]
-if scatter_df.empty:
-    st.write("No fixed-rate levels available in this window.")
+st.subheader("Yield curve (spot proxy)")
+st.caption(
+    "Rates differ enormously by currency (e.g. JPY near 0% vs USD ~4%), so the curve "
+    "below is built for one currency at a time — the short end (<1Y) is the closest "
+    "proxy to a 'spot' rate this data offers."
+)
+currency_counts = new_trades["Notional currency-Leg 1"].value_counts()
+currency_options = [c for c in currency_counts.index if c] or ["USD"]
+default_index = currency_options.index("USD") if "USD" in currency_options else 0
+currency = st.selectbox("Currency", currency_options, index=default_index)
+
+curve_df = new_trades[
+    (new_trades["Notional currency-Leg 1"] == currency)
+    & new_trades["level"].notna()
+    & new_trades["tenor_years"].between(0, 50, inclusive="right")
+].copy()
+curve_df = curve_df.loc[drop_outliers(curve_df["level"]).index]
+
+if curve_df.empty:
+    st.write(f"No fixed-rate levels available for {currency} in this window.")
 else:
-    fig = px.scatter(
-        scatter_df,
-        x="tenor_years",
-        y="level",
-        color_discrete_sequence=[CATEGORICAL[0]],
-        opacity=0.5,
-        labels={"tenor_years": "Tenor (years)", "level": "Fixed rate"},
+    curve_df["tenor_bucket"] = pd.cut(curve_df["tenor_years"], bins=bins, labels=labels)
+    curve_points = (
+        curve_df.dropna(subset=["tenor_bucket"])
+        .groupby("tenor_bucket", observed=True)["level"]
+        .median()
+        .reindex(labels)
+        .dropna()
+        .reset_index()
     )
-    fig.update_traces(marker=dict(size=6))
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=curve_df["tenor_years"],
+            y=curve_df["level"],
+            mode="markers",
+            name="Individual trades",
+            marker=dict(color=CATEGORICAL[0], size=6, opacity=0.35),
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=curve_points["tenor_bucket"].map(dict(zip(labels, [0.5, 1.5, 3.5, 7.5, 20, 40]))),
+            y=curve_points["level"],
+            mode="lines+markers",
+            name=f"{currency} median curve",
+            line=dict(color=CATEGORICAL[5], width=3),
+            marker=dict(size=9),
+        )
+    )
+    fig.update_layout(xaxis_title="Tenor (years)", yaxis_title="Fixed rate", legend_title=None)
     render(fig)
 
 st.caption(

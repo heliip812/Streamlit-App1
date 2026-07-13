@@ -47,6 +47,7 @@ COLUMNS = [
     "Fixed rate-Leg 1",
     "Spread-Leg 1",
     "Price",
+    "Exchange rate",
     "UPI Underlier Name",
 ]
 

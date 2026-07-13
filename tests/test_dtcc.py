@@ -82,6 +82,46 @@ def test_normalize_uses_usd_leg_for_cross_currency_trade():
     assert out.loc[0, "notional_local"] == 360_000_000_000
 
 
+def test_normalize_falls_back_to_exchange_rate_for_fx_level():
+    # FX forwards/swaps leave Fixed rate/Spread/Price blank; the executed
+    # level lives in "Exchange rate" instead, comma-formatted like notionals.
+    df = pd.DataFrame(
+        [
+            _raw_row(
+                **{
+                    "Fixed rate-Leg 1": None,
+                    "Spread-Leg 1": None,
+                    "Price": None,
+                    "Exchange rate": "1,508.35",
+                }
+            )
+        ]
+    )
+
+    out = normalize(df)
+
+    assert out.loc[0, "level"] == 1508.35
+
+
+def test_normalize_strips_commas_from_price_level():
+    # DTCC comma-formats large Price values (e.g. commodity/equity swaps);
+    # pd.to_numeric silently turns "16,097.59" into NaN without this.
+    df = pd.DataFrame([_raw_row(**{"Fixed rate-Leg 1": None, "Spread-Leg 1": None, "Price": "16,097.59"})])
+
+    out = normalize(df)
+
+    assert out.loc[0, "level"] == 16097.59
+
+
+def test_normalize_computes_tenor_days_and_years():
+    df = pd.DataFrame([_raw_row(**{"Effective Date": "2026-07-10", "Expiration Date": "2026-08-14"})])
+
+    out = normalize(df)
+
+    assert out.loc[0, "tenor_days"] == 35
+    assert round(out.loc[0, "tenor_years"], 3) == round(35 / 365.25, 3)
+
+
 def test_normalize_excludes_same_currency_non_usd_trade_from_usd_total():
     df = pd.DataFrame(
         [

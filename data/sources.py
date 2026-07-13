@@ -31,8 +31,8 @@ def get_dtcc_trades(asset_class_code: str, end_day: date, lookback_days: int) ->
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=2, show_spinner="Fetching CFTC positioning data...")
-def get_cftc_positioning(contract_names: tuple[str, ...], weeks: int) -> pd.DataFrame:
-    return cftc.fetch_positioning(list(contract_names), weeks)
+def get_cftc_positioning(contract_names: tuple[str, ...], weeks: int, report: str = "financial") -> pd.DataFrame:
+    return cftc.fetch_positioning(list(contract_names), weeks, report)
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=1, show_spinner="Fetching cross-asset overview...")

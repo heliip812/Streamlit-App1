@@ -18,11 +18,12 @@ included — figures here are derived from actual reported trades, not composite
 ## Pages
 
 - **Home** — cross-asset overview (latest-day notional/trades, multi-day trend)
-- **Credit** — CDS index (CDX/iTraxx) vs. single-name split, most active names
-- **Rates** — notional by tenor bucket and currency, fixed-rate levels
-- **FX** — most active currency pairs, daily volume
-- **Equities & Commodities** — most active underliers, daily volume
-- **CFTC Positioning** — net long/short by trader category, open interest
+- **Credit** — CDS index (CDX/iTraxx) vs. single-name split, most active names, spread curve by tenor
+- **Rates** — notional by tenor bucket and currency, per-currency yield curve
+- **FX** — most active currency pairs, spot vs. forward tenor mix, forward curve
+- **Equities & Commodities** — most active underliers, tenor mix, level curve by tenor
+- **CFTC Positioning** — net long/short by trader category and open interest, for both
+  financial futures (rates/FX/equity index) and commodity futures (WTI, gold, corn, etc.)
 
 ## Architecture
 
@@ -39,6 +40,9 @@ ui.py                      Shared Streamlit widgets: sidebar date/lookback
                            controls, chart chrome + render, metric rows,
                            empty-state banners — every page uses these
                            instead of repeating the same boilerplate
+analytics.py               Small pandas helpers shared across pages (e.g.
+                           percentile-based outlier dropping for curves) —
+                           not Streamlit-specific, not DTCC-specific
 viz_theme.py               The categorical/status color palette, shared
                            across all charts so a series always gets the
                            same color regardless of which page draws it

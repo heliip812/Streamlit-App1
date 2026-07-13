@@ -1,6 +1,8 @@
+import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from analytics import drop_outliers
 from config import CREDIT_LOOKBACK
 from data.sources import get_dtcc_trades
 from ui import empty_state, metric_row, render, sidebar_date_and_lookback
@@ -109,6 +111,52 @@ with col_right:
             use_container_width=True,
             hide_index=True,
         )
+
+st.subheader("Spread curve by tenor")
+st.caption(
+    "CDS liquidity concentrates overwhelmingly at the 5Y 'on-the-run' tenor, so this is "
+    "a thin curve compared to rates — treat non-5Y points as indicative at best. Index "
+    "trades also often report the fixed standard coupon (e.g. 100bps for CDX.NA.IG) "
+    "rather than the traded market spread, since the actual market level for a "
+    "standardized index is expressed as an upfront price DTCC doesn't disclose here — "
+    "so this curve is directional, not a substitute for a real quoted spread."
+)
+if index_trades.empty:
+    st.write("No index trades in this window to build a curve from.")
+else:
+    top_names = index_trades["UPI Underlier Name"].value_counts()
+    index_choice = st.selectbox("Index", top_names.index.tolist())
+    curve_df = index_trades[
+        (index_trades["UPI Underlier Name"] == index_choice) & index_trades["level"].notna()
+    ].copy()
+    curve_df = curve_df.loc[drop_outliers(curve_df["level"]).index]
+
+    tenor_bins = [0, 2, 4, 6, 8.5, 12]
+    tenor_labels = ["1Y", "3Y", "5Y", "7Y", "10Y"]
+    curve_df["tenor_bucket"] = pd.cut(curve_df["tenor_years"], bins=tenor_bins, labels=tenor_labels)
+    curve_points = (
+        curve_df.dropna(subset=["tenor_bucket"])
+        .groupby("tenor_bucket", observed=True)
+        .agg(median_spread=("level", "median"), trades=("level", "size"))
+        .reindex(tenor_labels)
+        .dropna()
+        .reset_index()
+    )
+
+    if curve_points.empty:
+        st.write(f"No usable spread levels for {index_choice} in this window.")
+    else:
+        fig = px.line(
+            curve_points,
+            x="tenor_bucket",
+            y="median_spread",
+            markers=True,
+            color_discrete_sequence=[CATEGORICAL[0]],
+            hover_data={"trades": True},
+            labels={"tenor_bucket": "Tenor", "median_spread": "Median spread/rate"},
+        )
+        fig.update_traces(marker=dict(size=10), line=dict(width=3))
+        render(fig)
 
 st.caption(
     "Spread/rate levels are derived from individual reported trades, not an official "

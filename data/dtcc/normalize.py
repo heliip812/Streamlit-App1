@@ -22,6 +22,18 @@ from .client import fetch_recent
 _MASKED_NOTIONAL_THRESHOLD = 1e14
 
 
+def _to_numeric(series: pd.Series | None) -> pd.Series:
+    """DTCC comma-formats large numeric fields (Price, Exchange rate, and
+    occasionally Spread) — e.g. "16,097.59" — which pd.to_numeric silently
+    turns into NaN instead of erroring, so this must run before it rather
+    than being an obviously-missing step.
+    """
+    if series is None:
+        return pd.Series(dtype=float)
+    cleaned = series.astype(str).str.replace(",", "", regex=False)
+    return pd.to_numeric(cleaned, errors="coerce")
+
+
 def _clean_notional(series: pd.Series) -> pd.Series:
     """DTCC caps very large notionals with a trailing '+' and formats with commas."""
     cleaned = (
@@ -68,12 +80,16 @@ def normalize(df: pd.DataFrame) -> pd.DataFrame:
     out["execution_ts"] = pd.to_datetime(out["Execution Timestamp"], errors="coerce", utc=True)
     out["effective_date"] = pd.to_datetime(out["Effective Date"], errors="coerce")
     out["expiration_date"] = pd.to_datetime(out["Expiration Date"], errors="coerce")
-    out["tenor_years"] = (out["expiration_date"] - out["effective_date"]).dt.days / 365.25
+    out["tenor_days"] = (out["expiration_date"] - out["effective_date"]).dt.days
+    out["tenor_years"] = out["tenor_days"] / 365.25
 
-    rate = pd.to_numeric(out.get("Fixed rate-Leg 1"), errors="coerce")
-    spread = pd.to_numeric(out.get("Spread-Leg 1"), errors="coerce")
-    price = pd.to_numeric(out.get("Price"), errors="coerce")
-    out["level"] = rate.fillna(spread).fillna(price)
+    rate = _to_numeric(out.get("Fixed rate-Leg 1"))
+    spread = _to_numeric(out.get("Spread-Leg 1"))
+    price = _to_numeric(out.get("Price"))
+    # FX forwards/swaps don't populate rate/spread/price — the executed
+    # level is "Exchange rate" instead.
+    exchange_rate = _to_numeric(out.get("Exchange rate"))
+    out["level"] = rate.fillna(spread).fillna(price).fillna(exchange_rate)
 
     underlier = out.get("UPI Underlier Name", pd.Series(dtype=object)).astype(str).str.upper()
     out["is_index"] = underlier.str.contains("|".join(CDS_INDEX_PATTERNS), na=False)
