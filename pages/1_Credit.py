@@ -1,34 +1,34 @@
-from datetime import date, timedelta
-
 import plotly.express as px
 import streamlit as st
 
+from config import CREDIT_LOOKBACK
 from data.sources import get_dtcc_trades
+from ui import empty_state, metric_row, render, sidebar_date_and_lookback
 from viz_theme import CATEGORICAL
 
 st.set_page_config(page_title="Credit — Derivatives Monitor", page_icon="📈", layout="wide")
 st.title("Credit derivatives")
 st.caption("CDS single names and index trades reported to DTCC's Swap Data Repository.")
 
-with st.sidebar:
-    as_of = st.date_input("As of date", value=date.today() - timedelta(days=1), key="credit_as_of")
-    lookback_days = st.slider("Lookback window (days)", 3, 30, 7, key="credit_lookback")
+as_of, lookback_days = sidebar_date_and_lookback(CREDIT_LOOKBACK, "credit")
 
 df = get_dtcc_trades("CREDITS", as_of, lookback_days)
 new_trades = df[df["is_new_trade"]].copy() if not df.empty else df
 
 if new_trades.empty:
-    st.info("No credit trades found in this window. Try an earlier 'as of' date — DTCC publishes with a short lag.")
-    st.stop()
+    empty_state("No credit trades found in this window. Try an earlier 'as of' date — DTCC publishes with a short lag.")
 
 index_trades = new_trades[new_trades["is_index"]]
 single_name_trades = new_trades[~new_trades["is_index"]]
 
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Total notional", f"${new_trades['notional_usd_approx'].sum() / 1e9:,.1f}B")
-c2.metric("Trades", f"{len(new_trades):,}")
-c3.metric("Index share of notional", f"{index_trades['notional_usd_approx'].sum() / new_trades['notional_usd_approx'].sum() * 100:,.0f}%")
-c4.metric("Cleared", f"{(new_trades['Cleared'] == 'Y').mean() * 100:,.0f}%")
+metric_row(
+    [
+        ("Total notional", f"${new_trades['notional_usd_approx'].sum() / 1e9:,.1f}B"),
+        ("Trades", f"{len(new_trades):,}"),
+        ("Index share of notional", f"{index_trades['notional_usd_approx'].sum() / new_trades['notional_usd_approx'].sum() * 100:,.0f}%"),
+        ("Cleared", f"{(new_trades['Cleared'] == 'Y').mean() * 100:,.0f}%"),
+    ]
+)
 
 st.subheader("Daily notional traded — index vs. single name")
 daily = (
@@ -45,8 +45,8 @@ fig = px.bar(
     color_discrete_sequence=[CATEGORICAL[0], CATEGORICAL[1]],
     labels={"_trade_date": "", "notional_usd_approx": "Notional traded ($)", "is_index": ""},
 )
-fig.update_layout(legend_title=None, margin=dict(l=10, r=10, t=10, b=10), bargap=0.15)
-st.plotly_chart(fig, use_container_width=True, theme="streamlit")
+fig.update_layout(legend_title=None, bargap=0.15)
+render(fig)
 
 col_left, col_right = st.columns(2)
 

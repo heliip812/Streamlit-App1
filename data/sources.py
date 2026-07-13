@@ -13,6 +13,8 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
+from config import CACHE_TTL_SECONDS
+
 from . import cftc, dtcc
 from .constants import DTCC_ASSET_CLASSES
 
@@ -23,17 +25,17 @@ from .constants import DTCC_ASSET_CLASSES
 # otherwise accumulate multiple large frames simultaneously and push total
 # memory past Streamlit Cloud's 1GB per-app limit even though any single
 # page load is individually well within it. max_entries bounds that.
-@st.cache_data(ttl=3600, max_entries=1, show_spinner="Fetching DTCC swap data repository trades...")
+@st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=1, show_spinner="Fetching DTCC swap data repository trades...")
 def get_dtcc_trades(asset_class_code: str, end_day: date, lookback_days: int) -> pd.DataFrame:
     return dtcc.get_recent_trades(asset_class_code, end_day, lookback_days)
 
 
-@st.cache_data(ttl=3600, max_entries=2, show_spinner="Fetching CFTC positioning data...")
+@st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=2, show_spinner="Fetching CFTC positioning data...")
 def get_cftc_positioning(contract_names: tuple[str, ...], weeks: int) -> pd.DataFrame:
     return cftc.fetch_positioning(list(contract_names), weeks)
 
 
-@st.cache_data(ttl=3600, max_entries=1, show_spinner="Fetching cross-asset overview...")
+@st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=1, show_spinner="Fetching cross-asset overview...")
 def get_all_asset_classes(end_day: date, lookback_days: int) -> dict[str, pd.DataFrame]:
     # Deliberately sequential across asset classes (each asset class still
     # fetches its own days concurrently): running all five concurrently

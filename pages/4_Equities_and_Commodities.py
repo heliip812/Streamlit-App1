@@ -1,18 +1,16 @@
-from datetime import date, timedelta
-
 import plotly.express as px
 import streamlit as st
 
+from config import EQUITIES_COMMODITIES_LOOKBACK
 from data.sources import get_dtcc_trades
+from ui import empty_state, metric_row, render, sidebar_date_and_lookback
 from viz_theme import CATEGORICAL
 
 st.set_page_config(page_title="Equities & Commodities — Derivatives Monitor", page_icon="📈", layout="wide")
 st.title("Equity & commodity derivatives")
 st.caption("Equity and commodity swaps/options reported to DTCC's Swap Data Repository.")
 
-with st.sidebar:
-    as_of = st.date_input("As of date", value=date.today() - timedelta(days=1), key="eqco_as_of")
-    lookback_days = st.slider("Lookback window (days)", 3, 21, 3, key="eqco_lookback")
+as_of, lookback_days = sidebar_date_and_lookback(EQUITIES_COMMODITIES_LOOKBACK, "eqco")
 
 # A selectbox (rather than st.tabs) so only the chosen asset class is
 # fetched — Streamlit renders every tab's body on every rerun regardless of
@@ -25,13 +23,15 @@ df = get_dtcc_trades(asset_code, as_of, lookback_days)
 new_trades = df[df["is_new_trade"]].copy() if not df.empty else df
 
 if new_trades.empty:
-    st.info("No trades found in this window. Try an earlier 'as of' date.")
-    st.stop()
+    empty_state("No trades found in this window. Try an earlier 'as of' date.")
 
-c1, c2, c3 = st.columns(3)
-c1.metric("Total notional", f"${new_trades['notional_usd_approx'].sum() / 1e9:,.1f}B")
-c2.metric("Trades", f"{len(new_trades):,}")
-c3.metric("Cleared", f"{(new_trades['Cleared'] == 'Y').mean() * 100:,.0f}%")
+metric_row(
+    [
+        ("Total notional", f"${new_trades['notional_usd_approx'].sum() / 1e9:,.1f}B"),
+        ("Trades", f"{len(new_trades):,}"),
+        ("Cleared", f"{(new_trades['Cleared'] == 'Y').mean() * 100:,.0f}%"),
+    ]
+)
 
 col_left, col_right = st.columns(2)
 
@@ -51,8 +51,7 @@ with col_left:
         color_discrete_sequence=[color],
         labels={"UPI Underlier Name": "", "notional_usd_approx": "Notional traded ($)"},
     )
-    fig.update_layout(margin=dict(l=10, r=10, t=10, b=10))
-    st.plotly_chart(fig, use_container_width=True, theme="streamlit")
+    render(fig)
 
 with col_right:
     st.subheader("Daily notional volume")
@@ -65,8 +64,7 @@ with col_right:
         color_discrete_sequence=[color],
         labels={"_trade_date": "", "notional_usd_approx": "Notional traded ($)"},
     )
-    fig.update_layout(margin=dict(l=10, r=10, t=10, b=10))
-    st.plotly_chart(fig, use_container_width=True, theme="streamlit")
+    render(fig)
 
 st.caption(
     "Notional figures only include trades with a USD-denominated leg (no synthetic "

@@ -1,9 +1,16 @@
-"""Ingestion of DTCC Swap Data Repository (SDR) public dissemination data.
+"""Raw ingestion of DTCC Swap Data Repository (SDR) public dissemination data.
 
 DTCC publishes real, trade-level OTC derivatives data free of charge under
 Dodd-Frank Part 43/45 reporting rules: one cumulative CSV (zipped) per asset
 class per calendar day, containing every publicly disseminated swap trade
 (price/rate, notional, counterparty-anonymized) for that day.
+
+This module owns fetching and lightly parsing that raw data — everything
+below "genuinely new trade rows, DTCC's original column names, unconverted
+strings". Cleaning/enrichment into analysis-ready columns lives in
+normalize.py; keeping the two separate means a future paid source that
+already provides clean data doesn't need to fake its way through this
+module's parsing quirks — it can go straight to normalize().
 
 Reference: https://www.dtcc.com/public-reporting
 """
@@ -22,10 +29,10 @@ import pyarrow.compute as pc
 import pyarrow.csv as pv
 import requests
 
-from . import s3_cache
-from .constants import CDS_INDEX_PATTERNS, DTCC_BASE_URL, NEW_TRADE_ACTION_TYPES
+from .. import s3_cache
+from ..constants import DTCC_BASE_URL, NEW_TRADE_ACTION_TYPES
 
-_COLUMNS = [
+COLUMNS = [
     "Action type",
     "Asset Class",
     "Execution Timestamp",
@@ -72,10 +79,10 @@ def fetch_day(asset_class_code: str, day: date) -> pd.DataFrame:
     try:
         resp = requests.get(url, timeout=_REQUEST_TIMEOUT)
     except requests.RequestException:
-        return pd.DataFrame(columns=_COLUMNS)
+        return pd.DataFrame(columns=COLUMNS)
 
     if resp.status_code != 200 or not resp.content:
-        return pd.DataFrame(columns=_COLUMNS)
+        return pd.DataFrame(columns=COLUMNS)
 
     # Some of these files are 100+ columns wide and 800k+ rows (equities
     # especially). Reading the whole thing into one pandas/Arrow table
@@ -95,7 +102,7 @@ def fetch_day(asset_class_code: str, day: date) -> pd.DataFrame:
                 # caused a hard segfault under load during testing.
                 reader = pv.open_csv(
                     f,
-                    convert_options=pv.ConvertOptions(include_columns=_COLUMNS),
+                    convert_options=pv.ConvertOptions(include_columns=COLUMNS),
                     read_options=pv.ReadOptions(block_size=8 * 1024 * 1024, use_threads=False),
                 )
                 kept_batches = []
@@ -104,10 +111,10 @@ def fetch_day(asset_class_code: str, day: date) -> pd.DataFrame:
                     mask = pc.is_in(table.column("Action type"), pa.array(NEW_TRADE_ACTION_TYPES))
                     kept_batches.append(table.filter(mask))
     except (zipfile.BadZipFile, StopIteration, ValueError, pa.ArrowInvalid):
-        return pd.DataFrame(columns=_COLUMNS)
+        return pd.DataFrame(columns=COLUMNS)
 
     if not kept_batches:
-        empty = pd.DataFrame(columns=_COLUMNS + ["_trade_date"])
+        empty = pd.DataFrame(columns=COLUMNS + ["_trade_date"])
         s3_cache.write_day(asset_class_code, day, empty)
         return empty
 
@@ -142,7 +149,7 @@ def fetch_recent(asset_class_code: str, end_day: date, lookback_days: int) -> pd
         results = pool.map(lambda day: fetch_day(asset_class_code, day), days)
     frames = [df for df in results if not df.empty]
     if not frames:
-        return pd.DataFrame(columns=_COLUMNS + ["_trade_date"])
+        return pd.DataFrame(columns=COLUMNS + ["_trade_date"])
     combined = pd.concat(frames, ignore_index=True)
     # Drop references to the per-day frames and nudge the allocator to
     # return their memory promptly rather than holding it in reserve —
@@ -152,75 +159,3 @@ def fetch_recent(asset_class_code: str, end_day: date, lookback_days: int) -> pd
     del frames, results
     gc.collect()
     return combined
-
-
-# DTCC represents an undisclosed/masked notional with a sentinel value
-# (typically 99,999,999,999,999,999,999.99999) rather than a real trade
-# size. Real swap notionals never approach this, so treat anything at or
-# above the threshold as "not disclosed" rather than a literal number.
-_MASKED_NOTIONAL_THRESHOLD = 1e14
-
-
-def _clean_notional(series: pd.Series) -> pd.Series:
-    """DTCC caps very large notionals with a trailing '+' and formats with commas."""
-    cleaned = (
-        series.astype(str)
-        .str.replace(",", "", regex=False)
-        .str.replace("+", "", regex=False)
-    )
-    values = pd.to_numeric(cleaned, errors="coerce")
-    return values.where(values < _MASKED_NOTIONAL_THRESHOLD)
-
-
-def normalize(df: pd.DataFrame) -> pd.DataFrame:
-    """Turn a raw DTCC slice into a tidy frame with derived analytics columns.
-
-    Notional is reported per-leg in that leg's own currency, and for
-    cross-currency instruments (FX swaps/forwards especially) leg 1 and
-    leg 2 can be in wildly different-valued currencies (e.g. IDR vs USD,
-    a ~18,000x face-value gap). Summing "Notional amount-Leg 1" across
-    trades regardless of currency — as if it were all USD — silently
-    inflates totals by orders of magnitude. ``notional_usd_approx`` is
-    therefore only populated when one of the two legs is actually
-    USD-denominated (using that leg's reported amount directly, with no
-    synthetic FX conversion); otherwise it's left NaN and excluded from
-    USD aggregates. ``notional_local`` keeps leg 1's raw amount in its own
-    currency, for same-currency breakdowns only.
-    """
-    if df.empty:
-        return df
-
-    out = df.copy()
-    raw_notional_1 = out.get("Notional amount-Leg 1", pd.Series(dtype=object))
-    raw_notional_2 = out.get("Notional amount-Leg 2", pd.Series(dtype=object))
-    notional_1 = _clean_notional(raw_notional_1)
-    notional_2 = _clean_notional(raw_notional_2)
-    ccy_1 = out.get("Notional currency-Leg 1", pd.Series(dtype=object))
-    ccy_2 = out.get("Notional currency-Leg 2", pd.Series(dtype=object))
-
-    out["notional_local"] = notional_1
-    out["notional_usd_approx"] = notional_1.where(ccy_1 == "USD", notional_2.where(ccy_2 == "USD"))
-    out["is_new_trade"] = out["Action type"].isin(NEW_TRADE_ACTION_TYPES)
-    out["is_capped_notional"] = raw_notional_1.astype(str).str.contains(r"\+", regex=True)
-    out["is_notional_masked"] = notional_1.isna() & raw_notional_1.notna()
-
-    out["execution_ts"] = pd.to_datetime(out["Execution Timestamp"], errors="coerce", utc=True)
-    out["effective_date"] = pd.to_datetime(out["Effective Date"], errors="coerce")
-    out["expiration_date"] = pd.to_datetime(out["Expiration Date"], errors="coerce")
-    out["tenor_years"] = (out["expiration_date"] - out["effective_date"]).dt.days / 365.25
-
-    rate = pd.to_numeric(out.get("Fixed rate-Leg 1"), errors="coerce")
-    spread = pd.to_numeric(out.get("Spread-Leg 1"), errors="coerce")
-    price = pd.to_numeric(out.get("Price"), errors="coerce")
-    out["level"] = rate.fillna(spread).fillna(price)
-
-    underlier = out.get("UPI Underlier Name", pd.Series(dtype=object)).astype(str).str.upper()
-    out["is_index"] = underlier.str.contains("|".join(CDS_INDEX_PATTERNS), na=False)
-
-    return out
-
-
-def get_recent_trades(asset_class_code: str, end_day: date, lookback_days: int) -> pd.DataFrame:
-    """Fetch + normalize in one call. This is the seam other data sources plug into."""
-    raw = fetch_recent(asset_class_code, end_day, lookback_days)
-    return normalize(raw)

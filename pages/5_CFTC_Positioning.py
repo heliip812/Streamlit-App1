@@ -1,8 +1,10 @@
 import plotly.graph_objects as go
 import streamlit as st
 
+from config import CFTC_WEEKS_LOOKBACK
 from data.constants import CFTC_TFF_CONTRACTS
 from data.sources import get_cftc_positioning
+from ui import empty_state, metric_row, render
 from viz_theme import CATEGORICAL
 
 st.set_page_config(page_title="CFTC Positioning — Derivatives Monitor", page_icon="📈", layout="wide")
@@ -15,24 +17,29 @@ st.caption(
 
 with st.sidebar:
     contract = st.selectbox("Contract", CFTC_TFF_CONTRACTS)
-    weeks = st.slider("Lookback (weeks)", 8, 104, 26)
+    weeks = st.slider(
+        "Lookback (weeks)", CFTC_WEEKS_LOOKBACK.min_value, CFTC_WEEKS_LOOKBACK.max_value, CFTC_WEEKS_LOOKBACK.default
+    )
 
 df = get_cftc_positioning((contract,), weeks)
 
 if df.empty:
-    st.warning(
+    empty_state(
         "No positioning data returned for this contract/window. The CFTC public reporting "
         "API can occasionally be slow or rate-limit; try again in a moment, or pick a "
-        "different contract."
+        "different contract.",
+        kind="warning",
     )
-    st.stop()
 
 latest = df.iloc[-1]
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Open interest", f"{int(latest['open_interest_all']):,}")
-c2.metric("Dealer net", f"{int(latest['dealer_net']):,}")
-c3.metric("Asset manager net", f"{int(latest['asset_mgr_net']):,}")
-c4.metric("Leveraged funds net", f"{int(latest['lev_money_net']):,}")
+metric_row(
+    [
+        ("Open interest", f"{int(latest['open_interest_all']):,}"),
+        ("Dealer net", f"{int(latest['dealer_net']):,}"),
+        ("Asset manager net", f"{int(latest['asset_mgr_net']):,}"),
+        ("Leveraged funds net", f"{int(latest['lev_money_net']):,}"),
+    ]
+)
 
 st.subheader(f"Net positioning by trader category — {contract}")
 fig = go.Figure()
@@ -54,13 +61,8 @@ for i, (col, name) in enumerate(
         )
     )
 fig.add_hline(y=0, line_width=1, line_color="rgba(128,128,128,0.4)")
-fig.update_layout(
-    yaxis_title="Net contracts (long − short)",
-    legend_title=None,
-    hovermode="x unified",
-    margin=dict(l=10, r=10, t=10, b=10),
-)
-st.plotly_chart(fig, use_container_width=True, theme="streamlit")
+fig.update_layout(yaxis_title="Net contracts (long − short)", legend_title=None, hovermode="x unified")
+render(fig)
 
 st.subheader("Open interest")
 fig_oi = go.Figure(
@@ -72,5 +74,5 @@ fig_oi = go.Figure(
         fill="tozeroy",
     )
 )
-fig_oi.update_layout(yaxis_title="Contracts", margin=dict(l=10, r=10, t=10, b=10))
-st.plotly_chart(fig_oi, use_container_width=True, theme="streamlit")
+fig_oi.update_layout(yaxis_title="Contracts")
+render(fig_oi)

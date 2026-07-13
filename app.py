@@ -1,11 +1,11 @@
-from datetime import date, timedelta
-
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from config import HOME_LOOKBACK
 from data.constants import DTCC_ASSET_CLASSES
 from data.sources import get_all_asset_classes
+from ui import metric_row, render, sidebar_date_and_lookback
 from viz_theme import CATEGORICAL
 
 st.set_page_config(page_title="Derivatives Market Monitor", page_icon="📈", layout="wide")
@@ -16,10 +16,9 @@ st.caption(
     "sourced from public regulatory disclosures."
 )
 
+st.sidebar.header("Settings")
+as_of, lookback_days = sidebar_date_and_lookback(HOME_LOOKBACK, "home", label="Lookback window (calendar days)")
 with st.sidebar:
-    st.header("Settings")
-    as_of = st.date_input("As of date", value=date.today() - timedelta(days=1))
-    lookback_days = st.slider("Lookback window (calendar days)", min_value=3, max_value=21, value=3)
     st.divider()
     st.markdown(
         "**Sources**\n\n"
@@ -64,10 +63,12 @@ for label, df in data_by_class.items():
 summary_df = pd.DataFrame(latest_day_rows)
 
 st.subheader("Latest trading day, by asset class")
-cols = st.columns(len(summary_df))
-for col, (_, row) in zip(cols, summary_df.iterrows()):
-    notional_bn = row["Notional (latest day)"] / 1e9
-    col.metric(row["Asset class"], f"${notional_bn:,.1f}B", f"{int(row['Trades (latest day)']):,} trades")
+metric_row(
+    [
+        (row["Asset class"], f"${row['Notional (latest day)'] / 1e9:,.1f}B", f"{int(row['Trades (latest day)']):,} trades")
+        for _, row in summary_df.iterrows()
+    ]
+)
 
 st.subheader(f"Notional volume trend — last {lookback_days} days")
 if trend_frames:
@@ -92,9 +93,8 @@ if trend_frames:
         xaxis_title=None,
         legend_title=None,
         hovermode="x unified",
-        margin=dict(l=10, r=10, t=10, b=10),
     )
-    st.plotly_chart(fig, use_container_width=True, theme="streamlit")
+    render(fig)
 else:
     st.info("No trades found in this window yet — try an earlier 'as of' date.")
 

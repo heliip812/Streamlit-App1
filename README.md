@@ -24,6 +24,51 @@ included — figures here are derived from actual reported trades, not composite
 - **Equities & Commodities** — most active underliers, daily volume
 - **CFTC Positioning** — net long/short by trader category, open interest
 
+## Architecture
+
+```
+app.py                    Home page (Streamlit's entrypoint)
+pages/                    One file per page, auto-discovered by Streamlit
+  1_Credit.py
+  2_Rates.py
+  3_FX.py
+  4_Equities_and_Commodities.py
+  5_CFTC_Positioning.py
+config.py                 Tunables: lookback slider ranges, cache TTL
+ui.py                      Shared Streamlit widgets: sidebar date/lookback
+                           controls, chart chrome + render, metric rows,
+                           empty-state banners — every page uses these
+                           instead of repeating the same boilerplate
+viz_theme.py               The categorical/status color palette, shared
+                           across all charts so a series always gets the
+                           same color regardless of which page draws it
+data/
+  sources.py               The only module pages import data through —
+                           adds st.cache_data and is the seam where a
+                           future paid feed (Markit/ICE/Bloomberg) would
+                           plug in alongside the free ones
+  constants.py             Asset class codes, index-name patterns, CFTC
+                           resource IDs/contract lists
+  dtcc/
+    client.py              Fetching + parsing raw DTCC files (HTTP, zip,
+                           streaming CSV parse) — no analytics, just "get
+                           the rows out of the file"
+    normalize.py            Cleaning raw rows into analysis-ready columns
+                           (notional/currency handling, tenor, index
+                           detection) — knows nothing about HTTP or files
+  cftc.py                  CFTC Commitments of Traders ingestion
+  s3_cache.py               Optional persistent cache (see below);
+                           every function is a no-op if AWS isn't configured
+```
+
+**Adding a new data source** (e.g. a paid Markit feed): add a module under `data/`
+that exposes a `get_recent_trades(asset_class_code, end_day, lookback_days) -> DataFrame`
+returning the same normalized columns `dtcc/normalize.py` produces (see its docstring),
+then add a cached wrapper in `data/sources.py`. Pages never need to change.
+
+**Adding a new page**: add a file to `pages/`, pull data through `data/sources.py`, and
+build its sidebar/charts with the helpers in `ui.py` — that's usually the entire diff.
+
 ## Setup
 
 ```bash
