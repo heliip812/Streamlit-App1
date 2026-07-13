@@ -15,7 +15,7 @@ import streamlit as st
 
 from config import CACHE_TTL_SECONDS
 
-from . import cftc, dtcc
+from . import cftc, dtcc, s3_cache
 from .constants import DTCC_ASSET_CLASSES
 
 
@@ -42,3 +42,13 @@ def get_all_asset_classes(end_day: date, lookback_days: int) -> dict[str, pd.Dat
     # stacks their peak memory on top of each other and was observed to
     # spike well past Streamlit Cloud's 1GB per-app limit.
     return {label: dtcc.get_recent_trades(code, end_day, lookback_days) for code, label in DTCC_ASSET_CLASSES.items()}
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_s3_cache_status() -> tuple[bool, str]:
+    """Cached briefly (5 min, not the usual hour) since this does a real S3
+    round-trip — long enough to avoid re-checking on every widget
+    interaction, short enough to notice if a bucket/permission issue gets
+    fixed without waiting for the app to restart.
+    """
+    return s3_cache.health_check()

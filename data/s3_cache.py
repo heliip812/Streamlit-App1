@@ -86,3 +86,32 @@ def write_day(asset_class_code: str, day: date, df: pd.DataFrame) -> None:
         client.put_object(Bucket=cfg["bucket_name"], Key=_key(asset_class_code, day), Body=buf.getvalue())
     except Exception:
         pass
+
+
+def health_check() -> tuple[bool, str]:
+    """Round-trip a tiny test object through the exact read/write path the
+    app actually uses, so a misconfiguration (wrong bucket, missing IAM
+    permission, bad region) surfaces as an actionable message in the app
+    itself — the alternative is silently behaving identically to "not
+    configured at all", which is invisible from the outside once secrets
+    are involved.
+    """
+    cfg = _config()
+    if cfg is None:
+        return False, "No [aws] secrets configured (or missing a required key) — running without S3 caching."
+
+    client = _client()
+    if client is None:
+        return False, "Secrets are present but the S3 client failed to initialize — check access_key_id/region_name."
+
+    test_key = "dtcc/_healthcheck.txt"
+    payload = b"ok"
+    try:
+        client.put_object(Bucket=cfg["bucket_name"], Key=test_key, Body=payload)
+        resp = client.get_object(Bucket=cfg["bucket_name"], Key=test_key)
+        if resp["Body"].read() != payload:
+            return False, "Wrote and read back a test object, but the contents didn't match."
+    except Exception as e:
+        return False, f"S3 read/write test failed: {e}"
+
+    return True, f"Connected to s3://{cfg['bucket_name']} in {cfg['region_name']}."

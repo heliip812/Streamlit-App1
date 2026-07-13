@@ -4,7 +4,7 @@ import streamlit as st
 
 from config import HOME_LOOKBACK
 from data.constants import DTCC_ASSET_CLASSES
-from data.sources import get_all_asset_classes
+from data.sources import get_all_asset_classes, get_s3_cache_status
 from ui import metric_row, render, sidebar_date_and_lookback
 from viz_theme import CATEGORICAL
 
@@ -35,6 +35,9 @@ with st.sidebar:
         "USD-denominated leg (no synthetic FX conversion), so non-USD activity "
         "(e.g. EUR-only swaps) is under-represented here."
     )
+    st.divider()
+    s3_ok, s3_message = get_s3_cache_status()
+    st.markdown(f"**S3 cache:** {'✅' if s3_ok else '⚠️'} {s3_message}")
 
 data_by_class = get_all_asset_classes(as_of, lookback_days)
 
