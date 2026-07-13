@@ -89,20 +89,21 @@ curve_df = new_trades[
     & new_trades["tenor_years"].between(0, 50, inclusive="right")
 ].copy()
 curve_df = curve_df.loc[drop_outliers(curve_df["level"]).index]
+curve_df["tenor_bucket"] = pd.cut(curve_df["tenor_years"], bins=bins, labels=labels)
+curve_points = (
+    curve_df.dropna(subset=["tenor_bucket"])
+    .groupby("tenor_bucket", observed=True)["level"]
+    .median()
+    .reindex(labels)
+    .dropna()
+    .reset_index()
+    if not curve_df.empty
+    else pd.DataFrame(columns=["tenor_bucket", "level"])
+)
 
 if curve_df.empty:
     st.write(f"No fixed-rate levels available for {currency} in this window.")
 else:
-    curve_df["tenor_bucket"] = pd.cut(curve_df["tenor_years"], bins=bins, labels=labels)
-    curve_points = (
-        curve_df.dropna(subset=["tenor_bucket"])
-        .groupby("tenor_bucket", observed=True)["level"]
-        .median()
-        .reindex(labels)
-        .dropna()
-        .reset_index()
-    )
-
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
@@ -125,6 +126,75 @@ else:
     )
     fig.update_layout(xaxis_title="Tenor (years)", yaxis_title="Fixed rate", legend_title=None)
     render(fig)
+
+st.subheader("Trading signals")
+st.caption(
+    "Directional context derived from self-reported OTC trade prints within the window "
+    "selected above (widen the lookback slider for more history) — not executable quotes, "
+    "and not a substitute for a live pricing feed."
+)
+
+if curve_df.empty or curve_points.empty:
+    st.write("Not enough data in this window to compute signals.")
+else:
+    trend_col, rv_col, flow_col = st.columns(3)
+
+    with trend_col:
+        st.markdown("**Trend**")
+        bucket_counts = curve_df["tenor_bucket"].value_counts()
+        trend_bucket = bucket_counts.idxmax()
+        daily = curve_df[curve_df["tenor_bucket"] == trend_bucket].groupby("_trade_date")["level"].median().sort_index()
+        if len(daily) >= 2:
+            latest_val, prior_val = daily.iloc[-1], daily.iloc[-2]
+            pct_rank = (daily <= latest_val).mean() * 100
+            st.metric(f"{trend_bucket} level", f"{latest_val:.4f}", f"{latest_val - prior_val:+.4f} vs prior day")
+            st.caption(f"{pct_rank:.0f}th percentile of {len(daily)} days in this window")
+        else:
+            st.write(f"Only one day of {trend_bucket} data in this window.")
+
+    with rv_col:
+        st.markdown("**Relative value (curve shape)**")
+        midpoints = dict(zip(labels, [0.5, 1.5, 3.5, 7.5, 20, 40]))
+        pts = curve_points.assign(x=curve_points["tenor_bucket"].map(midpoints)).sort_values("x").reset_index(drop=True)
+        deviations = [
+            (
+                pts.loc[i, "tenor_bucket"],
+                pts.loc[i, "level"]
+                - (
+                    pts.loc[i - 1, "level"]
+                    + (pts.loc[i + 1, "level"] - pts.loc[i - 1, "level"])
+                    * (pts.loc[i, "x"] - pts.loc[i - 1, "x"])
+                    / (pts.loc[i + 1, "x"] - pts.loc[i - 1, "x"])
+                ),
+            )
+            for i in range(1, len(pts) - 1)
+        ]
+        if deviations:
+            bucket, deviation = max(deviations, key=lambda d: abs(d[1]))
+            direction = "above" if deviation > 0 else "below"
+            st.metric(f"Largest kink: {bucket}", f"{deviation:+.4f}", f"{direction} its neighbors' trend line")
+        else:
+            st.write("Need at least 3 curve points to assess shape.")
+
+    with flow_col:
+        st.markdown("**Flow vs. window average**")
+        by_day_bucket = (
+            new_trades.dropna(subset=["tenor_bucket"])
+            .groupby(["_trade_date", "tenor_bucket"], observed=True)["notional_usd_approx"]
+            .sum()
+        )
+        window_avg = by_day_bucket.groupby("tenor_bucket", observed=True).mean()
+        latest_day = new_trades["_trade_date"].max()
+        latest_by_bucket = by_day_bucket.xs(latest_day, level="_trade_date", drop_level=True) if latest_day in by_day_bucket.index.get_level_values("_trade_date") else pd.Series(dtype=float)
+        # Ignore buckets too thin to be a meaningful baseline (avoids a near-zero
+        # average turning a trivial trade into a false "50x normal" spike).
+        material = window_avg[window_avg > window_avg.sum() * 0.01]
+        ratios = (latest_by_bucket / material).dropna()
+        if ratios.empty:
+            st.write("Not enough data to compare today's flow to the window average.")
+        else:
+            bucket = ratios.idxmax()
+            st.metric(f"{bucket} notional today", f"{ratios[bucket]:.1f}x", "of this window's average daily notional")
 
 st.caption(
     "Rate levels are derived from individual reported trades, not an official curve — "
