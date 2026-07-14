@@ -2,7 +2,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from analytics import trend_signal
+from analytics import trend_signal, zscore
 from config import CFTC_WEEKS_LOOKBACK
 from data import cftc
 from data.constants import CFTC_DISAGG_CONTRACTS, CFTC_TFF_CONTRACTS
@@ -89,25 +89,31 @@ render(fig_oi)
 
 st.subheader("Positioning extremes")
 st.caption(
-    "Percentile rank of each category's current net position within the lookback window "
-    "above — readings near the extremes (below ~10th or above ~90th percentile) are the "
-    "classic contrarian crowding signal: positioning is stretched one way, raising the odds "
-    "of a reversal if the fundamental driver behind it fades."
+    "How stretched each category's current net position is within the lookback window "
+    "above, shown two ways: percentile rank (how extreme by rank) and z-score (how "
+    "extreme in magnitude — standard deviations from the window mean). They agree in a "
+    "symmetric distribution and diverge when positioning is skewed. Readings near the "
+    "extremes (below ~10th / above ~90th percentile, or |z| above ~2) are the classic "
+    "contrarian crowding signal: stretched one way, raising the odds of a reversal if "
+    "the driver behind it fades."
 )
 signal_cols = st.columns(len(categories))
 for col, (category, net_col) in zip(signal_cols, categories):
     with col:
         st.markdown(f"**{category}**")
-        signal = trend_signal(df.set_index("report_date")[net_col])
+        net_series = df.set_index("report_date")[net_col]
+        signal = trend_signal(net_series)
         if signal is None:
             st.write("Not enough data.")
             continue
         delta = f"{signal.change:+,.0f} vs prior week" if signal.change is not None else None
         st.metric("Net position", f"{signal.latest_value:,.0f}", delta)
-        percentile_caption = f"{signal.percentile:.0f}th percentile of {signal.n_periods} weeks"
-        if signal.percentile >= 90:
+        z = zscore(net_series)
+        z_text = f", z = {z:+.1f}" if z is not None else ""
+        percentile_caption = f"{signal.percentile:.0f}th pctile of {signal.n_periods} wks{z_text}"
+        if signal.percentile >= 90 or (z is not None and z >= 2):
             st.caption(f"⚠️ Crowded long — {percentile_caption}")
-        elif signal.percentile <= 10:
+        elif signal.percentile <= 10 or (z is not None and z <= -2):
             st.caption(f"⚠️ Crowded short — {percentile_caption}")
         else:
             st.caption(percentile_caption)

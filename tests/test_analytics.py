@@ -2,7 +2,7 @@ from datetime import date
 
 import pandas as pd
 
-from analytics import curve_kink, drop_outliers, flow_vs_average, sample_for_scatter, trend_signal
+from analytics import curve_kink, drop_outliers, flow_vs_average, sample_for_scatter, trend_signal, zscore
 
 
 def test_drop_outliers_removes_extreme_sentinel_value():
@@ -67,6 +67,31 @@ def test_trend_signal_handles_single_period():
 
 def test_trend_signal_returns_none_for_empty_series():
     assert trend_signal(pd.Series(dtype=float)) is None
+
+
+def test_zscore_measures_latest_deviation():
+    # Latest value (10) sits well above a cluster around 2.
+    series = pd.Series([1, 2, 3, 2, 1, 2, 3, 10], index=range(8))
+
+    z = zscore(series)
+
+    assert z is not None
+    assert z > 1  # clearly elevated
+
+
+def test_zscore_uses_latest_by_index_not_position():
+    series = pd.Series([10.0, 2.0, 2.0], index=[date(2026, 7, 3), date(2026, 7, 1), date(2026, 7, 2)])
+
+    # After sorting by index the latest is 2026-07-03 -> value 10.0.
+    assert zscore(series) > 0
+
+
+def test_zscore_returns_none_for_flat_series():
+    assert zscore(pd.Series([5.0, 5.0, 5.0])) is None
+
+
+def test_zscore_returns_none_for_single_point():
+    assert zscore(pd.Series([5.0])) is None
 
 
 def test_curve_kink_finds_largest_deviation_from_neighbors():

@@ -80,6 +80,23 @@ def trend_signal(series: pd.Series) -> TrendSignal | None:
     return TrendSignal(latest_value=latest, change=change, percentile=percentile, n_periods=len(ordered))
 
 
+def zscore(series: pd.Series) -> float | None:
+    """The latest value's z-score within a series (how many standard
+    deviations it sits from the window mean). Complements trend_signal's
+    percentile on the CFTC page: percentile answers "how extreme by rank",
+    z-score answers "how extreme in magnitude", and the two disagree
+    exactly when the distribution is skewed — worth seeing both. Returns
+    None with fewer than two points or a flat (zero-variance) series.
+    """
+    clean = series.dropna().sort_index()
+    if len(clean) < 2:
+        return None
+    std = clean.std()
+    if std == 0:
+        return None
+    return (clean.iloc[-1] - clean.mean()) / std
+
+
 def curve_kink(points: pd.DataFrame, label_col: str, x_col: str, y_col: str) -> tuple[str, float] | None:
     """Which interior point on a curve deviates most from a straight line
     through its immediate neighbors — a butterfly/kink relative-value

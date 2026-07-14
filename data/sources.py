@@ -15,7 +15,7 @@ import streamlit as st
 
 from config import CACHE_TTL_SECONDS
 
-from . import cftc, dtcc, s3_cache
+from . import cftc, dtcc, fed_funds, s3_cache
 from .constants import DTCC_ASSET_CLASSES
 
 
@@ -33,6 +33,11 @@ def get_dtcc_trades(asset_class_code: str, start_day: date, end_day: date) -> pd
 @st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=2, show_spinner="Fetching CFTC positioning data...")
 def get_cftc_positioning(contract_names: tuple[str, ...], weeks: int, report: str = "financial") -> pd.DataFrame:
     return cftc.fetch_positioning(list(contract_names), weeks, report)
+
+
+@st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=1, show_spinner="Fetching CME Fed Funds futures...")
+def get_fed_funds_futures() -> pd.DataFrame:
+    return fed_funds.fetch_fed_funds_futures()
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=1, show_spinner="Fetching cross-asset overview...")
