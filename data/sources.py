@@ -26,8 +26,8 @@ from .constants import DTCC_ASSET_CLASSES
 # memory past Streamlit Cloud's 1GB per-app limit even though any single
 # page load is individually well within it. max_entries bounds that.
 @st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=1, show_spinner="Fetching DTCC swap data repository trades...")
-def get_dtcc_trades(asset_class_code: str, end_day: date, lookback_days: int) -> pd.DataFrame:
-    return dtcc.get_recent_trades(asset_class_code, end_day, lookback_days)
+def get_dtcc_trades(asset_class_code: str, start_day: date, end_day: date) -> pd.DataFrame:
+    return dtcc.get_recent_trades(asset_class_code, start_day, end_day)
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=2, show_spinner="Fetching CFTC positioning data...")
@@ -36,12 +36,12 @@ def get_cftc_positioning(contract_names: tuple[str, ...], weeks: int, report: st
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=1, show_spinner="Fetching cross-asset overview...")
-def get_all_asset_classes(end_day: date, lookback_days: int) -> dict[str, pd.DataFrame]:
+def get_all_asset_classes(start_day: date, end_day: date) -> dict[str, pd.DataFrame]:
     # Deliberately sequential across asset classes (each asset class still
     # fetches its own days concurrently): running all five concurrently
     # stacks their peak memory on top of each other and was observed to
     # spike well past Streamlit Cloud's 1GB per-app limit.
-    return {label: dtcc.get_recent_trades(code, end_day, lookback_days) for code, label in DTCC_ASSET_CLASSES.items()}
+    return {label: dtcc.get_recent_trades(code, start_day, end_day) for code, label in DTCC_ASSET_CLASSES.items()}
 
 
 @st.cache_data(ttl=300, show_spinner=False)

@@ -5,20 +5,20 @@ import streamlit as st
 from analytics import drop_outliers
 from config import FX_LOOKBACK
 from data.sources import get_dtcc_trades
-from ui import empty_state, metric_row, render, sidebar_date_and_lookback
+from ui import empty_state, metric_row, render, sidebar_date_range
 from viz_theme import CATEGORICAL
 
 st.set_page_config(page_title="FX — Derivatives Monitor", page_icon="📈", layout="wide")
 st.title("FX derivatives")
 st.caption("FX swaps, forwards and options reported to DTCC's Swap Data Repository.")
 
-as_of, lookback_days = sidebar_date_and_lookback(FX_LOOKBACK, "fx")
+start_day, end_day = sidebar_date_range(FX_LOOKBACK, "fx")
 
-df = get_dtcc_trades("FOREX", as_of, lookback_days)
+df = get_dtcc_trades("FOREX", start_day, end_day)
 new_trades = df[df["is_new_trade"]].copy() if not df.empty else df
 
 if new_trades.empty:
-    empty_state("No FX trades found in this window. Try an earlier 'as of' date — DTCC publishes with a short lag.")
+    empty_state("No FX trades found in this date range. Try widening it — DTCC publishes with a short lag.")
 
 new_trades["pair"] = (
     new_trades["Notional currency-Leg 1"].fillna("?") + "/" + new_trades["Notional currency-Leg 2"].fillna("?")
@@ -68,7 +68,7 @@ with col_right:
         color_discrete_sequence=[CATEGORICAL[2]],
         labels={"_trade_date": "", "notional_usd_approx": "Notional traded ($)"},
     )
-    render(fig)
+    render(fig, hide_weekends=True)
 
 st.subheader("Spot vs. tenor")
 st.caption("'Spot' = settlement within 2 days of execution; everything longer is a forward/swap tenor bucket.")

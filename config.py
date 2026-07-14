@@ -15,6 +15,13 @@ class RangeConfig:
     default: int
 
 
+# For the DTCC-backed pages, these drive ui.sidebar_date_range: `default` is
+# how many business days the range picker starts pre-filled with, and
+# `max_value` caps how many business days a manually widened range can span
+# — the safety limit that keeps a wide window from reintroducing the memory
+# issues seen before (min_value is unused here; date ranges have no natural
+# floor besides "at least one day"). CFTC_WEEKS_LOOKBACK is unrelated — it
+# still drives a plain slider in weeks, not a date range.
 HOME_LOOKBACK = RangeConfig(min_value=3, max_value=21, default=3)
 CREDIT_LOOKBACK = RangeConfig(min_value=3, max_value=30, default=7)
 RATES_LOOKBACK = RangeConfig(min_value=3, max_value=30, default=7)

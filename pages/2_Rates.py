@@ -6,20 +6,20 @@ import streamlit as st
 from analytics import drop_outliers, sample_for_scatter
 from config import RATES_LOOKBACK
 from data.sources import get_dtcc_trades
-from ui import empty_state, metric_row, render, sidebar_date_and_lookback
+from ui import empty_state, metric_row, render, sidebar_date_range
 from viz_theme import CATEGORICAL
 
 st.set_page_config(page_title="Rates — Derivatives Monitor", page_icon="📈", layout="wide")
 st.title("Rates derivatives")
 st.caption("Interest rate swaps reported to DTCC's Swap Data Repository.")
 
-as_of, lookback_days = sidebar_date_and_lookback(RATES_LOOKBACK, "rates")
+start_day, end_day = sidebar_date_range(RATES_LOOKBACK, "rates")
 
-df = get_dtcc_trades("RATES", as_of, lookback_days)
+df = get_dtcc_trades("RATES", start_day, end_day)
 new_trades = df[df["is_new_trade"]].copy() if not df.empty else df
 
 if new_trades.empty:
-    empty_state("No rates trades found in this window. Try an earlier 'as of' date — DTCC publishes with a short lag.")
+    empty_state("No rates trades found in this date range. Try widening it — DTCC publishes with a short lag.")
 
 metric_row(
     [
@@ -130,9 +130,9 @@ else:
 
 st.subheader("Trading signals")
 st.caption(
-    "Directional context derived from self-reported OTC trade prints within the window "
-    "selected above (widen the lookback slider for more history) — not executable quotes, "
-    "and not a substitute for a live pricing feed."
+    "Directional context derived from self-reported OTC trade prints within the date "
+    "range selected above (widen it for more history) — not executable quotes, and not "
+    "a substitute for a live pricing feed."
 )
 
 if curve_df.empty or curve_points.empty:

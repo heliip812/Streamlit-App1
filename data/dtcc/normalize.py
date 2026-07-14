@@ -130,7 +130,7 @@ def normalize(df: pd.DataFrame) -> pd.DataFrame:
     return out[[c for c in keep if c in out.columns]]
 
 
-def get_recent_trades(asset_class_code: str, end_day: date, lookback_days: int) -> pd.DataFrame:
+def get_recent_trades(asset_class_code: str, start_day: date, end_day: date) -> pd.DataFrame:
     """Fetch + normalize in one call. This is the seam other data sources plug into."""
-    raw = fetch_recent(asset_class_code, end_day, lookback_days)
+    raw = fetch_recent(asset_class_code, start_day, end_day)
     return normalize(raw)

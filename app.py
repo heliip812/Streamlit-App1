@@ -5,7 +5,7 @@ import streamlit as st
 from config import HOME_LOOKBACK
 from data.constants import DTCC_ASSET_CLASSES
 from data.sources import get_all_asset_classes, get_s3_cache_status
-from ui import metric_row, render, sidebar_date_and_lookback
+from ui import metric_row, render, sidebar_date_range
 from viz_theme import CATEGORICAL
 
 st.set_page_config(page_title="Derivatives Market Monitor", page_icon="📈", layout="wide")
@@ -17,7 +17,7 @@ st.caption(
 )
 
 st.sidebar.header("Settings")
-as_of, lookback_days = sidebar_date_and_lookback(HOME_LOOKBACK, "home", label="Lookback window (calendar days)")
+start_day, end_day = sidebar_date_range(HOME_LOOKBACK, "home")
 with st.sidebar:
     st.divider()
     st.markdown(
@@ -39,7 +39,7 @@ with st.sidebar:
     s3_ok, s3_message = get_s3_cache_status()
     st.markdown(f"**S3 cache:** {'✅' if s3_ok else '⚠️'} {s3_message}")
 
-data_by_class = get_all_asset_classes(as_of, lookback_days)
+data_by_class = get_all_asset_classes(start_day, end_day)
 
 latest_day_rows = []
 trend_frames = []
@@ -73,7 +73,7 @@ metric_row(
     ]
 )
 
-st.subheader(f"Notional volume trend — last {lookback_days} days")
+st.subheader(f"Notional volume trend — {start_day:%Y-%m-%d} to {end_day:%Y-%m-%d}")
 if trend_frames:
     trend_df = pd.concat(trend_frames, ignore_index=True)
     fig = go.Figure()
@@ -97,9 +97,9 @@ if trend_frames:
         legend_title=None,
         hovermode="x unified",
     )
-    render(fig)
+    render(fig, hide_weekends=True)
 else:
-    st.info("No trades found in this window yet — try an earlier 'as of' date.")
+    st.info("No trades found in this window yet — try an earlier date range.")
 
 st.divider()
 st.markdown(

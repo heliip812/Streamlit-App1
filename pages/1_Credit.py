@@ -5,20 +5,20 @@ import streamlit as st
 from analytics import drop_outliers
 from config import CREDIT_LOOKBACK
 from data.sources import get_dtcc_trades
-from ui import empty_state, metric_row, render, sidebar_date_and_lookback
+from ui import empty_state, metric_row, render, sidebar_date_range
 from viz_theme import CATEGORICAL
 
 st.set_page_config(page_title="Credit — Derivatives Monitor", page_icon="📈", layout="wide")
 st.title("Credit derivatives")
 st.caption("CDS single names and index trades reported to DTCC's Swap Data Repository.")
 
-as_of, lookback_days = sidebar_date_and_lookback(CREDIT_LOOKBACK, "credit")
+start_day, end_day = sidebar_date_range(CREDIT_LOOKBACK, "credit")
 
-df = get_dtcc_trades("CREDITS", as_of, lookback_days)
+df = get_dtcc_trades("CREDITS", start_day, end_day)
 new_trades = df[df["is_new_trade"]].copy() if not df.empty else df
 
 if new_trades.empty:
-    empty_state("No credit trades found in this window. Try an earlier 'as of' date — DTCC publishes with a short lag.")
+    empty_state("No credit trades found in this date range. Try widening it — DTCC publishes with a short lag.")
 
 index_trades = new_trades[new_trades["is_index"]]
 single_name_trades = new_trades[~new_trades["is_index"]]
@@ -48,7 +48,7 @@ fig = px.bar(
     labels={"_trade_date": "", "notional_usd_approx": "Notional traded ($)", "is_index": ""},
 )
 fig.update_layout(legend_title=None, bargap=0.15)
-render(fig)
+render(fig, hide_weekends=True)
 
 col_left, col_right = st.columns(2)
 

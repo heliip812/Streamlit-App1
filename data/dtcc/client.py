@@ -21,7 +21,7 @@ import gc
 import io
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, timedelta
+from datetime import date
 
 import pandas as pd
 import pyarrow as pa
@@ -142,14 +142,19 @@ def fetch_day(asset_class_code: str, day: date) -> pd.DataFrame:
     return df
 
 
-def fetch_recent(asset_class_code: str, end_day: date, lookback_days: int) -> pd.DataFrame:
-    """Fetch and concatenate several days of a slice, skipping missing days.
+def fetch_recent(asset_class_code: str, start_day: date, end_day: date) -> pd.DataFrame:
+    """Fetch and concatenate a date range of a slice, business days only.
 
-    Days are fetched concurrently — this is pure I/O wait on independent
-    HTTP requests, and lookback windows of a week or more make the naive
-    serial version too slow for a good first-load experience.
+    DTCC never publishes on weekends, so — unlike a naive "every calendar
+    day in the range" loop — weekends are skipped outright rather than
+    spending a network round trip per weekend day on a request that's
+    guaranteed to come back empty. Days are fetched concurrently — this is
+    pure I/O wait on independent HTTP requests, and wide ranges make the
+    naive serial version too slow for a good first-load experience.
     """
-    days = [end_day - timedelta(days=i) for i in range(lookback_days)]
+    days = [d.date() for d in pd.bdate_range(start=start_day, end=end_day)]
+    if not days:
+        return pd.DataFrame(columns=COLUMNS + ["_trade_date"])
     with ThreadPoolExecutor(max_workers=min(4, len(days))) as pool:
         results = pool.map(lambda day: fetch_day(asset_class_code, day), days)
     frames = [df for df in results if not df.empty]

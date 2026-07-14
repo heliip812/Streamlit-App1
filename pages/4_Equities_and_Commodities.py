@@ -5,14 +5,14 @@ import streamlit as st
 from analytics import drop_outliers
 from config import EQUITIES_COMMODITIES_LOOKBACK
 from data.sources import get_dtcc_trades
-from ui import empty_state, metric_row, render, sidebar_date_and_lookback
+from ui import empty_state, metric_row, render, sidebar_date_range
 from viz_theme import CATEGORICAL
 
 st.set_page_config(page_title="Equities & Commodities — Derivatives Monitor", page_icon="📈", layout="wide")
 st.title("Equity & commodity derivatives")
 st.caption("Equity and commodity swaps/options reported to DTCC's Swap Data Repository.")
 
-as_of, lookback_days = sidebar_date_and_lookback(EQUITIES_COMMODITIES_LOOKBACK, "eqco")
+start_day, end_day = sidebar_date_range(EQUITIES_COMMODITIES_LOOKBACK, "eqco")
 
 # A selectbox (rather than st.tabs) so only the chosen asset class is
 # fetched — Streamlit renders every tab's body on every rerun regardless of
@@ -29,11 +29,11 @@ if choice == "Commodities":
         "trader category), see the CFTC Positioning page."
     )
 
-df = get_dtcc_trades(asset_code, as_of, lookback_days)
+df = get_dtcc_trades(asset_code, start_day, end_day)
 new_trades = df[df["is_new_trade"]].copy() if not df.empty else df
 
 if new_trades.empty:
-    empty_state("No trades found in this window. Try an earlier 'as of' date.")
+    empty_state("No trades found in this date range. Try widening it.")
 
 metric_row(
     [
@@ -74,7 +74,7 @@ with col_right:
         color_discrete_sequence=[color],
         labels={"_trade_date": "", "notional_usd_approx": "Notional traded ($)"},
     )
-    render(fig)
+    render(fig, hide_weekends=True)
 
 TENOR_BINS = [-1, 2, 9, 45, 135, 270, 100000]
 TENOR_LABELS = ["Spot", "1W", "1M", "3M", "6M", "1Y+"]
