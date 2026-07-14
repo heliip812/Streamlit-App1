@@ -37,10 +37,9 @@ def get_cftc_positioning(contract_names: tuple[str, ...], weeks: int, report: st
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=1, show_spinner="Fetching cross-asset overview...")
 def get_all_asset_classes(start_day: date, end_day: date) -> dict[str, pd.DataFrame]:
-    # Deliberately sequential across asset classes (each asset class still
-    # fetches its own days concurrently): running all five concurrently
-    # stacks their peak memory on top of each other and was observed to
-    # spike well past Streamlit Cloud's 1GB per-app limit.
+    # Deliberately sequential across asset classes: running all five
+    # concurrently stacks their peak memory on top of each other and was
+    # observed to spike well past Streamlit Cloud's 1GB per-app limit.
     return {label: dtcc.get_recent_trades(code, start_day, end_day) for code, label in DTCC_ASSET_CLASSES.items()}
 
 

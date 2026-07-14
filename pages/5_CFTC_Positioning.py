@@ -2,6 +2,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from analytics import trend_signal
 from config import CFTC_WEEKS_LOOKBACK
 from data import cftc
 from data.constants import CFTC_DISAGG_CONTRACTS, CFTC_TFF_CONTRACTS
@@ -85,3 +86,38 @@ fig_oi = go.Figure(
 )
 fig_oi.update_layout(yaxis_title="Contracts")
 render(fig_oi)
+
+st.subheader("Positioning extremes")
+st.caption(
+    "Percentile rank of each category's current net position within the lookback window "
+    "above — readings near the extremes (below ~10th or above ~90th percentile) are the "
+    "classic contrarian crowding signal: positioning is stretched one way, raising the odds "
+    "of a reversal if the fundamental driver behind it fades."
+)
+signal_cols = st.columns(len(categories))
+for col, (category, net_col) in zip(signal_cols, categories):
+    with col:
+        st.markdown(f"**{category}**")
+        signal = trend_signal(df.set_index("report_date")[net_col])
+        if signal is None:
+            st.write("Not enough data.")
+            continue
+        delta = f"{signal.change:+,.0f} vs prior week" if signal.change is not None else None
+        st.metric("Net position", f"{signal.latest_value:,.0f}", delta)
+        percentile_caption = f"{signal.percentile:.0f}th percentile of {signal.n_periods} weeks"
+        if signal.percentile >= 90:
+            st.caption(f"⚠️ Crowded long — {percentile_caption}")
+        elif signal.percentile <= 10:
+            st.caption(f"⚠️ Crowded short — {percentile_caption}")
+        else:
+            st.caption(percentile_caption)
+
+with st.expander(f"Show weekly positioning detail — {contract}"):
+    st.dataframe(
+        df.sort_values("report_date", ascending=False)
+        .rename(columns={"report_date": "Week", "open_interest_all": "Open interest", **{c: name for name, c in categories}})[
+            ["Week", "Open interest"] + [name for name, _ in categories]
+        ],
+        use_container_width=True,
+        hide_index=True,
+    )

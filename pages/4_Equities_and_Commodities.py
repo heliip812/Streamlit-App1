@@ -2,10 +2,10 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from analytics import drop_outliers
+from analytics import curve_kink, drop_outliers, flow_vs_average, trend_signal
 from config import EQUITIES_COMMODITIES_LOOKBACK
 from data.sources import get_dtcc_trades
-from ui import empty_state, metric_row, render, sidebar_date_range
+from ui import empty_state, metric_row, raw_data_expander, render, render_trading_signals, sidebar_date_range
 from viz_theme import CATEGORICAL
 
 st.set_page_config(page_title="Equities & Commodities — Derivatives Monitor", page_icon="📈", layout="wide")
@@ -125,6 +125,37 @@ else:
     )
     fig.update_traces(marker=dict(size=10), line=dict(width=3))
     render(fig)
+
+    TENOR_MIDPOINTS_DAYS = dict(zip(TENOR_LABELS, [1, 7, 30, 90, 180, 365]))
+    trend_bucket = curve_df["tenor_bucket"].value_counts().idxmax()
+    daily = curve_df[curve_df["tenor_bucket"] == trend_bucket].groupby("_trade_date")["level"].median()
+    by_day_bucket = curve_df.dropna(subset=["tenor_bucket"]).groupby(["_trade_date", "tenor_bucket"], observed=True)["notional_usd_approx"].sum()
+
+    render_trading_signals(
+        trend=trend_signal(daily),
+        trend_label=f"{trend_bucket} level",
+        fmt_value=lambda v: f"{v:.4f}",
+        fmt_delta=lambda v: f"{v:+.4f}",
+        kink=curve_kink(curve_points.assign(x=curve_points["tenor_bucket"].map(TENOR_MIDPOINTS_DAYS)), "tenor_bucket", "x", "median_level"),
+        flow=flow_vs_average(by_day_bucket, curve_df["_trade_date"].max()),
+        intro=(
+            f"Directional context for {underlier_choice} derived from self-reported OTC trade prints "
+            "within the date range selected above (widen it for more history) — not executable "
+            "quotes, and not a substitute for a live pricing feed."
+        ),
+    )
+
+raw_data_expander(
+    curve_df,
+    columns={
+        "_trade_date": "Date",
+        "tenor_bucket": "Tenor",
+        "level": "Executed level",
+        "notional_usd_approx": "Notional (USD)",
+        "Cleared": "Cleared",
+    },
+    label=f"Show {underlier_choice} trade-level detail",
+)
 
 st.caption(
     "Notional figures only include trades with a USD-denominated leg (no synthetic "

@@ -10,12 +10,13 @@ calls instead of re-deriving the same boilerplate again.
 from __future__ import annotations
 
 from datetime import date, timedelta
-from typing import Literal
+from typing import Callable, Literal
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from analytics import TrendSignal
 from config import RangeConfig
 
 CHART_MARGIN = dict(l=10, r=10, t=10, b=10)
@@ -79,6 +80,54 @@ def render(fig: go.Figure, hide_weekends: bool = False) -> None:
     st.plotly_chart(fig, use_container_width=True, theme="streamlit")
 
 
+def render_trading_signals(
+    trend: TrendSignal | None,
+    trend_label: str,
+    fmt_value: Callable[[float], str],
+    fmt_delta: Callable[[float], str],
+    kink: tuple[str, float] | None,
+    flow: tuple[str, float] | None,
+    intro: str,
+) -> None:
+    """The standard three-panel 'Trading signals' row — trend (percentile +
+    period-over-period change), relative value (curve-shape kink), and
+    flow vs. window average — built from analytics.py's already-computed
+    results so every page renders them identically. Any panel shows a
+    plain "not enough data" message if its input is None rather than
+    erroring, since a thin window/currency/pair selection is expected,
+    not a bug.
+    """
+    st.subheader("Trading signals")
+    st.caption(intro)
+    trend_col, rv_col, flow_col = st.columns(3)
+
+    with trend_col:
+        st.markdown("**Trend**")
+        if trend is None:
+            st.write("Not enough data for a trend.")
+        else:
+            delta = fmt_delta(trend.change) + " vs prior period" if trend.change is not None else None
+            st.metric(trend_label, fmt_value(trend.latest_value), delta)
+            st.caption(f"{trend.percentile:.0f}th percentile of {trend.n_periods} periods in this window")
+
+    with rv_col:
+        st.markdown("**Relative value (curve shape)**")
+        if kink is None:
+            st.write("Need at least 3 curve points to assess shape.")
+        else:
+            bucket, deviation = kink
+            direction = "above" if deviation > 0 else "below"
+            st.metric(f"Largest kink: {bucket}", fmt_value(deviation), f"{direction} its neighbors' trend line")
+
+    with flow_col:
+        st.markdown("**Flow vs. window average**")
+        if flow is None:
+            st.write("Not enough data to compare flow to the window average.")
+        else:
+            bucket, ratio = flow
+            st.metric(f"{bucket} — today", f"{ratio:.1f}x", "of this window's average")
+
+
 def metric_row(metrics: list[tuple[str, ...]]) -> None:
     """A row of st.metric tiles from (label, value) or (label, value, delta) tuples."""
     cols = st.columns(len(metrics))
@@ -90,3 +139,29 @@ def empty_state(message: str, kind: Literal["info", "warning"] = "info") -> None
     """Standard 'nothing to show' banner that halts the rest of the page's script run."""
     (st.info if kind == "info" else st.warning)(message)
     st.stop()
+
+
+def raw_data_expander(
+    df: pd.DataFrame,
+    columns: dict[str, str],
+    label: str = "Show trade-level detail",
+    max_rows: int = 2000,
+) -> None:
+    """A collapsed-by-default table of the underlying rows behind a page's
+    charts — for anyone who wants to see more than the aggregate views
+    without it cluttering the default page. `columns` maps internal column
+    names to display labels and also selects which columns are shown, in
+    that order. Capped at max_rows (most recent first) — this is meant for
+    spot-checking specific trades, not for exporting the entire window; a
+    display table with tens of thousands of rows is exactly the kind of
+    thing that caused the memory issues fixed earlier.
+    """
+    with st.expander(label):
+        shown = df.sort_values("_trade_date", ascending=False).head(max_rows) if "_trade_date" in df.columns else df.head(max_rows)
+        if len(df) > max_rows:
+            st.caption(f"Showing the most recent {max_rows:,} of {len(df):,} trades.")
+        st.dataframe(
+            shown[[c for c in columns if c in shown.columns]].rename(columns=columns),
+            use_container_width=True,
+            hide_index=True,
+        )

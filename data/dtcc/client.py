@@ -20,7 +20,6 @@ from __future__ import annotations
 import gc
 import io
 import zipfile
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
 import pandas as pd
@@ -148,16 +147,20 @@ def fetch_recent(asset_class_code: str, start_day: date, end_day: date) -> pd.Da
     DTCC never publishes on weekends, so — unlike a naive "every calendar
     day in the range" loop — weekends are skipped outright rather than
     spending a network round trip per weekend day on a request that's
-    guaranteed to come back empty. Days are fetched concurrently — this is
-    pure I/O wait on independent HTTP requests, and wide ranges make the
-    naive serial version too slow for a good first-load experience.
+    guaranteed to come back empty. Days are fetched sequentially: running
+    fetch_day's pyarrow CSV parse concurrently across a ThreadPoolExecutor
+    was tried (pure I/O wait on independent HTTP requests should parallelize
+    well), but reproduced a hard segfault inside libarrow on the largest
+    files (Equities) even with pyarrow's own internal reader threading
+    already disabled — multiple concurrent C++ parses from separate Python
+    threads turned out to be unsafe on top of that, not just nested with it.
+    Sequential is slower but every day still hits the S3 cache after its
+    first fetch, so this only costs time on a genuine cache miss.
     """
     days = [d.date() for d in pd.bdate_range(start=start_day, end=end_day)]
     if not days:
         return pd.DataFrame(columns=COLUMNS + ["_trade_date"])
-    with ThreadPoolExecutor(max_workers=min(4, len(days))) as pool:
-        results = pool.map(lambda day: fetch_day(asset_class_code, day), days)
-    frames = [df for df in results if not df.empty]
+    frames = [df for day in days if not (df := fetch_day(asset_class_code, day)).empty]
     if not frames:
         return pd.DataFrame(columns=COLUMNS + ["_trade_date"])
     combined = pd.concat(frames, ignore_index=True)
@@ -166,6 +169,6 @@ def fetch_recent(asset_class_code: str, start_day: date, end_day: date) -> pd.Da
     # matters when running under a hard cgroup memory limit (Streamlit
     # Cloud), where "freed but not yet returned to the OS" still counts
     # against the cap.
-    del frames, results
+    del frames
     gc.collect()
     return combined
