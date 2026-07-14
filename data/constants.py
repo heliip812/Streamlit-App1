@@ -89,10 +89,12 @@ FRED_YIELD_SERIES = {
 # FRED value is preferred and the Rates sidebar lets the viewer override it.
 CURRENT_EFFR_DEFAULT = 4.33
 
-# 2026 FOMC decision dates (the second/announcement day of each meeting).
-# VERIFY against federalreserve.gov/monetarypolicy/fomccalendars.htm — the
-# path only depends on meetings still ahead of the current date.
-FOMC_MEETING_DATES_2026 = [
+# FOMC decision dates are fetched from the Fed's public calendar page at
+# runtime (see data/cb_calendar.py); this list is the FALLBACK used when that
+# best-effort scrape fails. VERIFY against
+# federalreserve.gov/monetarypolicy/fomccalendars.htm and keep roughly current.
+FOMC_CALENDAR_URL = "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+FOMC_MEETING_DATES_FALLBACK = [
     date(2026, 1, 28),
     date(2026, 3, 18),
     date(2026, 4, 29),
@@ -109,3 +111,45 @@ FOMC_MEETING_DATES_2026 = [
 # honestly. Shown only as a dated reference against the market-implied path.
 SEP_DOT_PLOT_MEDIAN = {2026: 3.875, 2027: 3.375, 2028: 3.125}
 SEP_AS_OF = "June 2026 SEP (placeholder — update from the latest release)"
+
+# --- ECB (European Central Bank) ---------------------------------------------
+# The ECB Data Portal — free, keyless, well-structured; the euro-area
+# counterpart to FRED. Each series is one small CSV request:
+#   {ECB_DATA_URL}/{dataflow}/{key}?lastNObservations=1&format=csvdata
+ECB_DATA_URL = "https://data-api.ecb.europa.eu/service/data"
+
+# Live policy anchors: the deposit facility rate (the effective policy floor in
+# the current regime), the main refinancing rate, and the €STR overnight
+# benchmark used to anchor the front of the implied path.
+ECB_DFR_KEY = "FM/B.U2.EUR.4F.KR.DFR.LEV"
+ECB_MRO_KEY = "FM/B.U2.EUR.4F.KR.MRR_FR.LEV"
+ECB_ESTR_KEY = "EST/B.EU000A2X2A25.WT"
+
+# Euro-area AAA government spot yield curve (maturity in years -> series key),
+# the ECB's published curve used the same way FRED's Treasury yields are for
+# the Fed. AAA/Bund collateral trades rich (safe haven), so this reads even a
+# touch more dovish than the US proxy; captioned accordingly.
+ECB_YIELD_KEYS = {
+    0.25: "YC/B.U2.EUR.4F.G_N_A.SV_C_YM.SR_3M",
+    0.5: "YC/B.U2.EUR.4F.G_N_A.SV_C_YM.SR_6M",
+    1.0: "YC/B.U2.EUR.4F.G_N_A.SV_C_YM.SR_1Y",
+    2.0: "YC/B.U2.EUR.4F.G_N_A.SV_C_YM.SR_2Y",
+}
+
+# Fallback euro overnight rate (€STR, %) if the live series is unavailable.
+CURRENT_ESTR_DEFAULT = 1.90
+
+# ECB Governing Council monetary-policy meeting dates are scraped best-effort
+# from the ECB calendar page (data/cb_calendar.py); this is the FALLBACK.
+# VERIFY against ecb.europa.eu and keep roughly current.
+ECB_CALENDAR_URL = "https://www.ecb.europa.eu/press/calendars/mgcgc/html/index.en.html"
+ECB_MEETING_DATES_FALLBACK = [
+    date(2026, 2, 5),
+    date(2026, 3, 19),
+    date(2026, 4, 30),
+    date(2026, 6, 4),
+    date(2026, 7, 23),
+    date(2026, 9, 10),
+    date(2026, 10, 29),
+    date(2026, 12, 17),
+]

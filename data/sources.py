@@ -15,7 +15,7 @@ import streamlit as st
 
 from config import CACHE_TTL_SECONDS
 
-from . import cftc, dtcc, fred, s3_cache
+from . import cb_calendar, cftc, dtcc, ecb, fred, s3_cache
 from .constants import DTCC_ASSET_CLASSES
 
 
@@ -38,6 +38,18 @@ def get_cftc_positioning(contract_names: tuple[str, ...], weeks: int, report: st
 @st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=1, show_spinner="Fetching FRED rates data...")
 def get_fred_rates(series_ids: tuple[str, ...]) -> dict[str, float]:
     return fred.fetch_fred_latest(series_ids)
+
+
+@st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=1, show_spinner="Fetching ECB rates data...")
+def get_ecb_rates() -> dict:
+    return ecb.fetch_ecb_policy_inputs()
+
+
+# Meeting calendars change a few times a year, so a day-long TTL is plenty and
+# keeps the best-effort scrape off the critical path on most loads.
+@st.cache_data(ttl=86400, max_entries=2, show_spinner=False)
+def get_meeting_dates(central_bank: str) -> list:
+    return cb_calendar.fetch_fomc_dates() if central_bank == "fomc" else cb_calendar.fetch_ecb_dates()
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=1, show_spinner="Fetching cross-asset overview...")

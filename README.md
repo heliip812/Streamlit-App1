@@ -20,8 +20,10 @@ included — figures here are derived from actual reported trades, not composite
 - **Home** — cross-asset overview (latest-day notional/trades, multi-day trend)
 - **Credit** — CDS index (CDX/iTraxx) vs. single-name split, most active names, spread curve by tenor
 - **Rates** — notional by tenor bucket and currency, per-currency yield curve, plus a
-  **Fed policy path** subsection (market-implied policy rate from FRED's short-end
-  Treasury curve, implied rate at each upcoming FOMC meeting, dot-plot overlay)
+  **Central bank policy path** subsection: market-implied policy rate for the Fed (FRED
+  Treasury curve, FOMC dot-plot overlay) and the ECB (ECB Data Portal euro-area curve),
+  with the implied rate at each upcoming meeting; meeting dates scraped best-effort from
+  the official calendars, falling back to a maintained list
 - **FX** — most active currency pairs, spot vs. forward tenor mix, forward curve
 - **Equities & Commodities** — most active underliers, tenor mix, level curve by tenor
 - **CFTC Positioning** — net long/short by trader category and open interest, for both
@@ -72,6 +74,10 @@ data/
   cftc.py                  CFTC Commitments of Traders ingestion
   fred.py                  FRED series ingestion (keyless CSV) — EFFR, target
                            range, short-end Treasury yields; feeds fed_path.py
+  ecb.py                   ECB Data Portal ingestion (keyless CSV) — €STR,
+                           deposit/MRO rates, euro-area yield curve
+  cb_calendar.py           Best-effort scrape of the Fed/ECB meeting calendars,
+                           validated, with a maintained fallback in constants.py
   s3_cache.py               Optional persistent cache (see below);
                            every function is a no-op if AWS isn't configured
 ```
