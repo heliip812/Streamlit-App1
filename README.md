@@ -20,8 +20,8 @@ included — figures here are derived from actual reported trades, not composite
 - **Home** — cross-asset overview (latest-day notional/trades, multi-day trend)
 - **Credit** — CDS index (CDX/iTraxx) vs. single-name split, most active names, spread curve by tenor
 - **Rates** — notional by tenor bucket and currency, per-currency yield curve, plus a
-  **Fed policy path** subsection (market-implied policy rate from CME 30-Day Fed Funds
-  futures, per-meeting hike/cut/hold probabilities, dot-plot overlay)
+  **Fed policy path** subsection (market-implied policy rate from FRED's short-end
+  Treasury curve, implied rate at each upcoming FOMC meeting, dot-plot overlay)
 - **FX** — most active currency pairs, spot vs. forward tenor mix, forward curve
 - **Equities & Commodities** — most active underliers, tenor mix, level curve by tenor
 - **CFTC Positioning** — net long/short by trader category and open interest, for both
@@ -41,10 +41,10 @@ pages/                    One file per page, auto-discovered by Streamlit
   4_Equities_and_Commodities.py
   5_CFTC_Positioning.py
 config.py                 Tunables: lookback slider ranges, cache TTL
-fed_path.py                Pure market-implied Fed-path math (futures strip ->
-                           per-meeting rate + hike/cut/hold probabilities),
-                           no Streamlit/network so it's fully unit-tested;
-                           rendered as a subsection of the Rates page
+fed_path.py                Pure market-implied Fed-path math (short-end
+                           Treasury yields -> implied forward rate path +
+                           interpolation), no Streamlit/network so it's fully
+                           unit-tested; rendered as a subsection of Rates
 ui.py                      Shared Streamlit widgets: sidebar date/lookback
                            controls, chart chrome + render, metric rows,
                            empty-state banners — every page uses these
@@ -70,8 +70,8 @@ data/
                            (notional/currency handling, tenor, index
                            detection) — knows nothing about HTTP or files
   cftc.py                  CFTC Commitments of Traders ingestion
-  fed_funds.py             CME 30-Day Fed Funds futures ingestion (delayed,
-                           keyless) — feeds fed_path.py
+  fred.py                  FRED series ingestion (keyless CSV) — EFFR, target
+                           range, short-end Treasury yields; feeds fed_path.py
   s3_cache.py               Optional persistent cache (see below);
                            every function is a no-op if AWS isn't configured
 ```

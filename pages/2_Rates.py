@@ -10,11 +10,15 @@ from config import RATES_LOOKBACK
 from data.constants import (
     CURRENT_EFFR_DEFAULT,
     FOMC_MEETING_DATES_2026,
+    FRED_EFFR_SERIES,
+    FRED_TARGET_LOWER_SERIES,
+    FRED_TARGET_UPPER_SERIES,
+    FRED_YIELD_SERIES,
     SEP_AS_OF,
     SEP_DOT_PLOT_MEDIAN,
 )
-from data.sources import get_dtcc_trades, get_fed_funds_futures
-from fed_path import meeting_expectations, step_probabilities
+from data.sources import get_dtcc_trades, get_fred_rates
+from fed_path import implied_forward_path, implied_rate_at
 from ui import empty_state, metric_row, raw_data_expander, render, render_trading_signals, sidebar_date_range
 from viz_theme import CATEGORICAL
 
@@ -178,81 +182,79 @@ st.caption(
 )
 
 # --- Fed policy path (market-implied) ----------------------------------------
-# A distinct data source (CME Fed Funds futures, not DTCC) but a natural fit on
+# A distinct data source (FRED's Treasury curve, not DTCC) but a natural fit on
 # the rates page. Uses st.info rather than empty_state on failure so a missing
-# CME feed never halts the DTCC content above it.
+# FRED feed never halts the DTCC content above it.
 st.divider()
 st.subheader("Fed policy path (market-implied)")
 st.caption(
-    "The policy-rate path priced into CME 30-Day Fed Funds futures (the input behind "
-    "CME's FedWatch), with per-meeting hike/cut/hold probabilities. Delayed free data, "
-    "and the one section here sourced from CME rather than DTCC — an approximation of a "
-    "live curve, not a live curve."
+    "Where the market expects the policy rate to go, implied by the short-end Treasury "
+    "curve from FRED (free, keyless). Anchored to the current effective rate (EFFR) and "
+    "shown against the FOMC dot plot. A Treasury-implied proxy: it carries a little term "
+    "premium and T-bill richness, so it reads marginally more dovish than a pure "
+    "OIS/futures measure — good for direction and rough magnitude, not a live curve."
 )
+
+fred_series = (FRED_EFFR_SERIES, FRED_TARGET_UPPER_SERIES, FRED_TARGET_LOWER_SERIES) + tuple(FRED_YIELD_SERIES)
+fred_data = get_fred_rates(fred_series)
+yields_by_years = {FRED_YIELD_SERIES[sid]: fred_data[sid] for sid in FRED_YIELD_SERIES if sid in fred_data}
 
 with st.sidebar:
     current_effr = st.number_input(
         "Current effective fed funds rate (EFFR), %",
         min_value=0.0,
         max_value=10.0,
-        value=float(CURRENT_EFFR_DEFAULT),
+        value=float(fred_data.get(FRED_EFFR_SERIES, CURRENT_EFFR_DEFAULT)),
         step=0.01,
         format="%.2f",
         help=(
-            "Anchors the front of the implied Fed path below. Set to the current EFFR "
-            "(NY Fed / FRED series EFFR); the default is a placeholder."
+            "Anchors the front of the implied Fed path below. Defaults to FRED's live "
+            "EFFR when available (else a fallback); override it here if needed."
         ),
     )
 
-fed_futures = get_fed_funds_futures()
-fed_expectations = (
-    meeting_expectations(fed_futures, FOMC_MEETING_DATES_2026, current_rate=current_effr, as_of=date.today())
-    if not fed_futures.empty
-    else []
-)
-
-if not fed_expectations:
+if not yields_by_years:
     st.info(
-        "Fed Funds futures aren't available right now — the CME feed is delayed and "
-        "occasionally blocks automated requests, and is unreachable outside Streamlit "
-        "Cloud. The rest of this page is unaffected."
+        "The FRED Treasury series aren't available right now (FRED is unreachable outside "
+        "Streamlit Cloud, and can briefly rate-limit). The rest of this page is unaffected."
     )
 else:
-    next_meeting = fed_expectations[0]
-    next_probs = step_probabilities(next_meeting.change)
-    most_likely_move, most_likely_prob = max(next_probs, key=lambda o: o[1])
-    final_rate = fed_expectations[-1].rate_after
+    today = date.today()
+    path = implied_forward_path(yields_by_years, anchor_rate=current_effr)
+
+    year_end = date(today.year, 12, 31)
+    year_end_horizon = (year_end - today).days / 365.0
+    year_end_rate = implied_rate_at(path, year_end_horizon)
+    upper = fred_data.get(FRED_TARGET_UPPER_SERIES)
+    lower = fred_data.get(FRED_TARGET_LOWER_SERIES)
     metric_row(
         [
-            ("Next meeting", next_meeting.meeting_date.strftime("%d %b %Y")),
+            ("Current EFFR", f"{current_effr:.2f}%"),
+            ("Target range", f"{lower:.2f}–{upper:.2f}%" if upper is not None and lower is not None else "N/A"),
             (
-                "Priced for next meeting",
-                f"{most_likely_move * 100:+.0f} bps" if most_likely_move else "No change",
-                f"{most_likely_prob * 100:.0f}% likely",
+                f"Implied by end-{today.year}",
+                f"{year_end_rate:.2f}%" if year_end_rate is not None else "N/A",
+                f"{(year_end_rate - current_effr) * 100:+.0f} bps" if year_end_rate is not None else None,
             ),
-            ("Implied cuts to year-end", f"{(final_rate - current_effr) * 100:+.0f} bps"),
         ]
     )
 
-    fed_path_df = pd.DataFrame(
-        {
-            "date": [date.today()] + [e.meeting_date for e in fed_expectations],
-            "rate": [current_effr] + [e.rate_after for e in fed_expectations],
-        }
-    )
+    # Plot the path against calendar dates so the dot plot and FOMC meetings
+    # line up with it.
+    path_dates = [today + pd.Timedelta(days=round(h * 365)) for h in path["horizon_years"]]
     fed_fig = go.Figure()
     fed_fig.add_trace(
         go.Scatter(
-            x=fed_path_df["date"],
-            y=fed_path_df["rate"],
+            x=path_dates,
+            y=path["rate"],
             mode="lines+markers",
-            line=dict(color=CATEGORICAL[0], width=3, shape="hv"),
+            line=dict(color=CATEGORICAL[0], width=3),
             marker=dict(size=8),
-            name="Market-implied (futures)",
+            name="Treasury-implied path",
         )
     )
-    last_year = fed_expectations[-1].meeting_date.year
-    fed_dots = [(date(y, 12, 31), r) for y, r in sorted(SEP_DOT_PLOT_MEDIAN.items()) if y <= last_year]
+    last_date = path_dates[-1]
+    fed_dots = [(date(y, 12, 31), r) for y, r in sorted(SEP_DOT_PLOT_MEDIAN.items()) if date(y, 12, 31) <= last_date]
     if fed_dots:
         fed_fig.add_trace(
             go.Scatter(
@@ -266,24 +268,33 @@ else:
     fed_fig.update_layout(yaxis_title="Fed funds rate (%)", legend_title=None, hovermode="x unified")
     render(fed_fig)
 
-    with st.expander("Per-meeting expectations & outcome probabilities"):
+    with st.expander("Implied rate at each upcoming FOMC meeting"):
+        prior_rate = current_effr
         fed_rows = []
-        for exp in fed_expectations:
-            move, prob = max(step_probabilities(exp.change), key=lambda o: o[1])
+        for meeting in FOMC_MEETING_DATES_2026:
+            if meeting < today or meeting > last_date:
+                continue
+            horizon = (meeting - today).days / 365.0
+            rate = implied_rate_at(path, horizon)
+            if rate is None:
+                continue
             fed_rows.append(
                 {
-                    "Meeting": exp.meeting_date.strftime("%d %b %Y"),
-                    "Implied rate after (%)": round(exp.rate_after, 3),
-                    "Expected change (bps)": round(exp.change * 100, 1),
-                    "Most likely move": "No change" if move == 0 else f"{move * 100:+.0f} bps",
-                    "Probability": f"{prob * 100:.0f}%",
+                    "Meeting": meeting.strftime("%d %b %Y"),
+                    "Implied rate (%)": round(rate, 3),
+                    "Cumulative vs now (bps)": round((rate - current_effr) * 100, 0),
+                    "Change since prior meeting (bps)": round((rate - prior_rate) * 100, 0),
                 }
             )
-        st.dataframe(pd.DataFrame(fed_rows), use_container_width=True, hide_index=True)
+            prior_rate = rate
+        if fed_rows:
+            st.dataframe(pd.DataFrame(fed_rows), use_container_width=True, hide_index=True)
+        else:
+            st.caption("No upcoming FOMC meetings fall within the Treasury curve's horizon.")
         st.caption(
-            "Method: a 30-Day Fed Funds future settles to 100 − the month's average EFFR, so "
-            "`100 − price` is the expected average rate; adjacent meeting-free months (or an "
-            "in-month split) recover the rate each meeting is priced to leave in place. Meeting "
-            "dates, the EFFR anchor and the dot-plot overlay are hand-maintained in "
-            "data/constants.py — verify and update after each meeting / SEP release."
+            "Implied rates are read off the Treasury-implied forward path at each meeting "
+            "date (interpolated), not a meeting-by-meeting probability model — the curve "
+            "reflects continuous expectations, not discrete decisions. Meeting dates and the "
+            "dot-plot overlay are hand-maintained in data/constants.py; verify them against "
+            "federalreserve.gov and update after each meeting / SEP release."
         )

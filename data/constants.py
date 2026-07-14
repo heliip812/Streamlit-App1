@@ -56,23 +56,37 @@ CFTC_DISAGG_CONTRACTS = [
     "WHEAT",
 ]
 
-# CME delayed quotes for 30-Day Fed Funds futures ("ZQ", product id 305) —
-# the same contracts that feed CME's FedWatch tool. Keyless and public but
-# delayed; like the CFTC host it's unreachable from the build sandbox (open
-# on Streamlit Cloud), so the fetch is defensively coded and unit-tested
-# against mocked responses rather than live calls.
-CME_QUOTES_URL = "https://www.cmegroup.com/CmeWS/mvc/Quotes/Future/305/G"
+# FRED (St. Louis Fed) — the free, keyless CSV endpoint that backs the Fed
+# path section. FRED is built for programmatic access and doesn't bot-block
+# (unlike CME's quotes endpoint), which is why the path is derived from the
+# Treasury curve it publishes rather than fed-funds futures. Like every other
+# external host it's unreachable from the build sandbox's allowlist proxy, so
+# the fetch is defensively coded and unit-tested against mocked CSV responses;
+# it works from Streamlit Cloud's open network.
+FRED_CSV_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
+
+# Live anchors pulled from FRED so the current policy stance isn't hardcoded:
+# the effective fed funds rate and the target range bounds.
+FRED_EFFR_SERIES = "DFF"
+FRED_TARGET_UPPER_SERIES = "DFEDTARU"
+FRED_TARGET_LOWER_SERIES = "DFEDTARL"
+
+# Short-end constant-maturity Treasury yields (series id -> maturity in years),
+# ascending — the market prices these off the expected policy path, so their
+# implied forwards are a market-implied Fed-path proxy. Front-end term premium
+# is small but nonzero and T-bills trade slightly rich, so this reads a touch
+# more dovish than a pure OIS/futures measure would; captioned as such.
+FRED_YIELD_SERIES = {
+    "DGS1MO": 1 / 12,
+    "DGS3MO": 0.25,
+    "DGS6MO": 0.5,
+    "DGS1": 1.0,
+    "DGS2": 2.0,
+}
 
 # --- Editable Fed assumptions -------------------------------------------------
-# These three are NOT market-derived and can't be inferred for a future date;
-# they anchor the market-implied math and must be kept current by hand. The
-# Fed Path page surfaces the rate as a sidebar input (defaulting here) so the
-# viewer sets ground truth; the meeting dates and dot plot are edited here.
-
-# Current effective fed funds rate (EFFR), in percent. VERIFY against the NY
-# Fed / FRED (series EFFR) and update after any move. Anchors the front of the
-# implied path — using EFFR rather than the range midpoint keeps the first
-# computed change honest.
+# Fallback anchor if FRED's EFFR series is momentarily unavailable; the live
+# FRED value is preferred and the Rates sidebar lets the viewer override it.
 CURRENT_EFFR_DEFAULT = 4.33
 
 # 2026 FOMC decision dates (the second/announcement day of each meeting).
