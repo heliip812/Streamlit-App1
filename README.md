@@ -19,15 +19,14 @@ included — figures here are derived from actual reported trades, not composite
 
 - **Home** — cross-asset overview (latest-day notional/trades, multi-day trend)
 - **Credit** — CDS index (CDX/iTraxx) vs. single-name split, most active names, spread curve by tenor
-- **Rates** — notional by tenor bucket and currency, per-currency yield curve
+- **Rates** — notional by tenor bucket and currency, per-currency yield curve, plus a
+  **Fed policy path** subsection (market-implied policy rate from CME 30-Day Fed Funds
+  futures, per-meeting hike/cut/hold probabilities, dot-plot overlay)
 - **FX** — most active currency pairs, spot vs. forward tenor mix, forward curve
 - **Equities & Commodities** — most active underliers, tenor mix, level curve by tenor
 - **CFTC Positioning** — net long/short by trader category and open interest, for both
   financial futures (rates/FX/equity index) and commodity futures (WTI, gold, corn, etc.),
   plus positioning-extreme flags (percentile + z-score crowding signals)
-- **Fed Path** — the market-implied policy-rate path from CME 30-Day Fed Funds futures,
-  with per-meeting hike/cut/hold probabilities and a dot-plot overlay
-
 Most DTCC/CFTC pages also carry a **Trading signals** row (trend percentile, curve-shape
 relative value, and flow vs. the window average) and a collapsible trade-level detail table.
 
@@ -41,11 +40,11 @@ pages/                    One file per page, auto-discovered by Streamlit
   3_FX.py
   4_Equities_and_Commodities.py
   5_CFTC_Positioning.py
-  6_Fed_Path.py
 config.py                 Tunables: lookback slider ranges, cache TTL
 fed_path.py                Pure market-implied Fed-path math (futures strip ->
                            per-meeting rate + hike/cut/hold probabilities),
-                           no Streamlit/network so it's fully unit-tested
+                           no Streamlit/network so it's fully unit-tested;
+                           rendered as a subsection of the Rates page
 ui.py                      Shared Streamlit widgets: sidebar date/lookback
                            controls, chart chrome + render, metric rows,
                            empty-state banners — every page uses these

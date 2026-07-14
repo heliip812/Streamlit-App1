@@ -1,3 +1,5 @@
+from datetime import date
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -5,7 +7,14 @@ import streamlit as st
 
 from analytics import curve_kink, drop_outliers, flow_vs_average, sample_for_scatter, trend_signal
 from config import RATES_LOOKBACK
-from data.sources import get_dtcc_trades
+from data.constants import (
+    CURRENT_EFFR_DEFAULT,
+    FOMC_MEETING_DATES_2026,
+    SEP_AS_OF,
+    SEP_DOT_PLOT_MEDIAN,
+)
+from data.sources import get_dtcc_trades, get_fed_funds_futures
+from fed_path import meeting_expectations, step_probabilities
 from ui import empty_state, metric_row, raw_data_expander, render, render_trading_signals, sidebar_date_range
 from viz_theme import CATEGORICAL
 
@@ -167,3 +176,114 @@ st.caption(
     "FX conversion); the currency chart shows trade count instead of notional for the "
     "same reason."
 )
+
+# --- Fed policy path (market-implied) ----------------------------------------
+# A distinct data source (CME Fed Funds futures, not DTCC) but a natural fit on
+# the rates page. Uses st.info rather than empty_state on failure so a missing
+# CME feed never halts the DTCC content above it.
+st.divider()
+st.subheader("Fed policy path (market-implied)")
+st.caption(
+    "The policy-rate path priced into CME 30-Day Fed Funds futures (the input behind "
+    "CME's FedWatch), with per-meeting hike/cut/hold probabilities. Delayed free data, "
+    "and the one section here sourced from CME rather than DTCC — an approximation of a "
+    "live curve, not a live curve."
+)
+
+with st.sidebar:
+    current_effr = st.number_input(
+        "Current effective fed funds rate (EFFR), %",
+        min_value=0.0,
+        max_value=10.0,
+        value=float(CURRENT_EFFR_DEFAULT),
+        step=0.01,
+        format="%.2f",
+        help=(
+            "Anchors the front of the implied Fed path below. Set to the current EFFR "
+            "(NY Fed / FRED series EFFR); the default is a placeholder."
+        ),
+    )
+
+fed_futures = get_fed_funds_futures()
+fed_expectations = (
+    meeting_expectations(fed_futures, FOMC_MEETING_DATES_2026, current_rate=current_effr, as_of=date.today())
+    if not fed_futures.empty
+    else []
+)
+
+if not fed_expectations:
+    st.info(
+        "Fed Funds futures aren't available right now — the CME feed is delayed and "
+        "occasionally blocks automated requests, and is unreachable outside Streamlit "
+        "Cloud. The rest of this page is unaffected."
+    )
+else:
+    next_meeting = fed_expectations[0]
+    next_probs = step_probabilities(next_meeting.change)
+    most_likely_move, most_likely_prob = max(next_probs, key=lambda o: o[1])
+    final_rate = fed_expectations[-1].rate_after
+    metric_row(
+        [
+            ("Next meeting", next_meeting.meeting_date.strftime("%d %b %Y")),
+            (
+                "Priced for next meeting",
+                f"{most_likely_move * 100:+.0f} bps" if most_likely_move else "No change",
+                f"{most_likely_prob * 100:.0f}% likely",
+            ),
+            ("Implied cuts to year-end", f"{(final_rate - current_effr) * 100:+.0f} bps"),
+        ]
+    )
+
+    fed_path_df = pd.DataFrame(
+        {
+            "date": [date.today()] + [e.meeting_date for e in fed_expectations],
+            "rate": [current_effr] + [e.rate_after for e in fed_expectations],
+        }
+    )
+    fed_fig = go.Figure()
+    fed_fig.add_trace(
+        go.Scatter(
+            x=fed_path_df["date"],
+            y=fed_path_df["rate"],
+            mode="lines+markers",
+            line=dict(color=CATEGORICAL[0], width=3, shape="hv"),
+            marker=dict(size=8),
+            name="Market-implied (futures)",
+        )
+    )
+    last_year = fed_expectations[-1].meeting_date.year
+    fed_dots = [(date(y, 12, 31), r) for y, r in sorted(SEP_DOT_PLOT_MEDIAN.items()) if y <= last_year]
+    if fed_dots:
+        fed_fig.add_trace(
+            go.Scatter(
+                x=[d for d, _ in fed_dots],
+                y=[r for _, r in fed_dots],
+                mode="markers",
+                marker=dict(color=CATEGORICAL[5], size=13, symbol="diamond"),
+                name=f"Dot plot median — {SEP_AS_OF}",
+            )
+        )
+    fed_fig.update_layout(yaxis_title="Fed funds rate (%)", legend_title=None, hovermode="x unified")
+    render(fed_fig)
+
+    with st.expander("Per-meeting expectations & outcome probabilities"):
+        fed_rows = []
+        for exp in fed_expectations:
+            move, prob = max(step_probabilities(exp.change), key=lambda o: o[1])
+            fed_rows.append(
+                {
+                    "Meeting": exp.meeting_date.strftime("%d %b %Y"),
+                    "Implied rate after (%)": round(exp.rate_after, 3),
+                    "Expected change (bps)": round(exp.change * 100, 1),
+                    "Most likely move": "No change" if move == 0 else f"{move * 100:+.0f} bps",
+                    "Probability": f"{prob * 100:.0f}%",
+                }
+            )
+        st.dataframe(pd.DataFrame(fed_rows), use_container_width=True, hide_index=True)
+        st.caption(
+            "Method: a 30-Day Fed Funds future settles to 100 − the month's average EFFR, so "
+            "`100 − price` is the expected average rate; adjacent meeting-free months (or an "
+            "in-month split) recover the rate each meeting is priced to leave in place. Meeting "
+            "dates, the EFFR anchor and the dot-plot overlay are hand-maintained in "
+            "data/constants.py — verify and update after each meeting / SEP release."
+        )
