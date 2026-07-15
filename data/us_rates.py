@@ -89,24 +89,31 @@ def fetch_policy_inputs() -> dict:
     anchor: EFFR (float | None); target_range: (lower, upper) | None;
     yields: {maturity_years: rate}; status: human-readable per-piece source
     lines for the page's diagnostic caption.
+
+    Source priority for the two pieces that drive the path — the curve and the
+    overnight anchor — is the keyless government APIs FIRST (Treasury.gov for
+    the curve, NY Fed for EFFR), with FRED as backup. FRED's fredgraph CSV is
+    a scraping-style endpoint behind a WAF that has proven flaky from
+    Streamlit Cloud; the government APIs are purpose-built for programmatic
+    access. FRED is still queried for the target range, which only it carries.
     """
     fred_series = (FRED_EFFR_SERIES, FRED_TARGET_UPPER_SERIES, FRED_TARGET_LOWER_SERIES) + tuple(FRED_YIELD_SERIES)
     fred_data = fred.fetch_fred_latest(fred_series)
     status = []
 
-    yields = {FRED_YIELD_SERIES[sid]: fred_data[sid] for sid in FRED_YIELD_SERIES if sid in fred_data}
+    yields = _treasury_yields()
     if yields:
-        status.append("Curve: FRED")
+        status.append("Curve: Treasury.gov")
     else:
-        yields = _treasury_yields()
-        status.append("Curve: Treasury.gov (FRED unavailable)" if yields else "Curve: unavailable (FRED and Treasury.gov both failed)")
+        yields = {FRED_YIELD_SERIES[sid]: fred_data[sid] for sid in FRED_YIELD_SERIES if sid in fred_data}
+        status.append("Curve: FRED (Treasury.gov unavailable)" if yields else "Curve: unavailable (Treasury.gov and FRED both failed)")
 
-    anchor = fred_data.get(FRED_EFFR_SERIES)
+    anchor = _nyfed_effr()
     if anchor is not None:
-        status.append("EFFR: FRED")
+        status.append("EFFR: NY Fed")
     else:
-        anchor = _nyfed_effr()
-        status.append("EFFR: NY Fed (FRED unavailable)" if anchor is not None else "EFFR: unavailable — using the manual anchor")
+        anchor = fred_data.get(FRED_EFFR_SERIES)
+        status.append("EFFR: FRED (NY Fed unavailable)" if anchor is not None else "EFFR: unavailable — using the manual anchor")
 
     target_range = None
     if FRED_TARGET_LOWER_SERIES in fred_data and FRED_TARGET_UPPER_SERIES in fred_data:

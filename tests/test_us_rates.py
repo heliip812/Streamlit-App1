@@ -27,37 +27,35 @@ _FULL_FRED = {
 }
 
 
-def test_prefers_fred_and_skips_fallbacks_when_available():
-    treasury = Mock()
-    nyfed = Mock()
+def test_prefers_treasury_and_nyfed_for_curve_and_anchor():
+    # Government APIs win for curve + anchor; FRED is still used for the
+    # target range (only it carries that), even when the primaries succeed.
     with (
         patch("data.us_rates.fred.fetch_fred_latest", return_value=_FULL_FRED),
-        patch.object(us_rates, "_treasury_yields", treasury),
-        patch.object(us_rates, "_nyfed_effr", nyfed),
-    ):
-        out = us_rates.fetch_policy_inputs()
-
-    assert out["anchor"] == 4.33
-    assert out["target_range"] == (4.25, 4.50)
-    assert out["yields"][0.25] == 4.20
-    assert any("FRED" in line for line in out["status"])
-    treasury.assert_not_called()
-    nyfed.assert_not_called()
-
-
-def test_falls_back_to_treasury_and_nyfed_when_fred_empty():
-    with (
-        patch("data.us_rates.fred.fetch_fred_latest", return_value={}),
         patch.object(us_rates, "_treasury_yields", return_value={0.25: 4.21, 2.0: 3.72}),
-        patch.object(us_rates, "_nyfed_effr", return_value=4.33),
+        patch.object(us_rates, "_nyfed_effr", return_value=4.34),
     ):
         out = us_rates.fetch_policy_inputs()
 
-    assert out["yields"] == {0.25: 4.21, 2.0: 3.72}
-    assert out["anchor"] == 4.33
-    assert out["target_range"] is None  # only FRED carries the range
+    assert out["yields"] == {0.25: 4.21, 2.0: 3.72}  # from Treasury.gov, not FRED's 4.20
+    assert out["anchor"] == 4.34  # from NY Fed, not FRED's 4.33
+    assert out["target_range"] == (4.25, 4.50)  # still from FRED
     assert any("Treasury.gov" in line for line in out["status"])
     assert any("NY Fed" in line for line in out["status"])
+
+
+def test_falls_back_to_fred_when_government_apis_fail():
+    with (
+        patch("data.us_rates.fred.fetch_fred_latest", return_value=_FULL_FRED),
+        patch.object(us_rates, "_treasury_yields", return_value={}),
+        patch.object(us_rates, "_nyfed_effr", return_value=None),
+    ):
+        out = us_rates.fetch_policy_inputs()
+
+    assert out["yields"][0.25] == 4.20  # FRED's DGS3MO
+    assert out["anchor"] == 4.33  # FRED's DFF
+    assert any("FRED (Treasury.gov unavailable)" in line for line in out["status"])
+    assert any("FRED (NY Fed unavailable)" in line for line in out["status"])
 
 
 def test_reports_unavailable_when_everything_fails():
