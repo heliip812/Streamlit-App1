@@ -7,19 +7,8 @@ import streamlit as st
 
 from analytics import curve_kink, drop_outliers, flow_vs_average, sample_for_scatter, trend_signal
 from config import RATES_LOOKBACK
-from data.constants import (
-    CURRENT_EFFR_DEFAULT,
-    CURRENT_ESTR_DEFAULT,
-    ECB_MEETING_DATES_FALLBACK,
-    FOMC_MEETING_DATES_FALLBACK,
-    FRED_EFFR_SERIES,
-    FRED_TARGET_LOWER_SERIES,
-    FRED_TARGET_UPPER_SERIES,
-    FRED_YIELD_SERIES,
-    SEP_AS_OF,
-    SEP_DOT_PLOT_MEDIAN,
-)
-from data.sources import get_dtcc_trades, get_ecb_rates, get_fred_rates, get_meeting_dates
+from data.central_banks import CENTRAL_BANKS, get_spec
+from data.sources import get_dtcc_trades, get_meeting_dates, get_policy_inputs
 from fed_path import implied_forward_path, implied_rate_at
 from ui import empty_state, metric_row, raw_data_expander, render, render_trading_signals, sidebar_date_range
 from viz_theme import CATEGORICAL
@@ -258,88 +247,76 @@ st.divider()
 st.subheader("Central bank policy path (market-implied)")
 st.caption(
     "Where the market expects policy rates to go, implied by each central bank's short-end "
-    "government curve — FRED's Treasury curve for the Fed, the ECB Data Portal's euro-area "
-    "curve for the ECB (both free and keyless). A government-curve proxy: small term premium "
-    "and safe-haven collateral richness make it read marginally more dovish than a pure OIS "
-    "measure — good for direction and rough magnitude, not a live policy-expectations curve."
+    "government curve (free, keyless sources with independent fallbacks). A government-curve "
+    "proxy: small term premium and safe-haven collateral richness make it read marginally "
+    "more dovish than a pure OIS measure — good for direction and rough magnitude, not a "
+    "live policy-expectations curve."
 )
-central_bank = st.radio("Central bank", ["Federal Reserve", "ECB"], horizontal=True)
-today = date.today()
-year_end_horizon = (date(today.year, 12, 31) - today).days / 365.0
+bank_label = st.radio("Central bank", [spec.label for spec in CENTRAL_BANKS], horizontal=True)
+spec = get_spec(bank_label)
+inputs = get_policy_inputs(spec.code)
+scraped_meetings = get_meeting_dates(spec.calendar_code)
 
-if central_bank == "Federal Reserve":
-    fred_series = (FRED_EFFR_SERIES, FRED_TARGET_UPPER_SERIES, FRED_TARGET_LOWER_SERIES) + tuple(FRED_YIELD_SERIES)
-    fred_data = get_fred_rates(fred_series)
-    yields_by_years = {FRED_YIELD_SERIES[sid]: fred_data[sid] for sid in FRED_YIELD_SERIES if sid in fred_data}
-    if not yields_by_years:
-        st.info(
-            "FRED Treasury series aren't available right now (FRED is unreachable outside "
-            "Streamlit Cloud, and can briefly rate-limit). The rest of this page is unaffected."
-        )
-    else:
-        anchor = float(fred_data.get(FRED_EFFR_SERIES, CURRENT_EFFR_DEFAULT))
-        path = implied_forward_path(yields_by_years, anchor_rate=anchor)
-        year_end_rate = implied_rate_at(path, year_end_horizon)
-        upper, lower = fred_data.get(FRED_TARGET_UPPER_SERIES), fred_data.get(FRED_TARGET_LOWER_SERIES)
-        metric_row(
-            [
-                ("Current EFFR", f"{anchor:.2f}%"),
-                ("Target range", f"{lower:.2f}–{upper:.2f}%" if upper is not None and lower is not None else "N/A"),
-                (
-                    f"Implied by end-{today.year}",
-                    f"{year_end_rate:.2f}%" if year_end_rate is not None else "N/A",
-                    f"{(year_end_rate - anchor) * 100:+.0f} bps" if year_end_rate is not None else None,
-                ),
-            ]
-        )
-        scraped = get_meeting_dates("fomc")
-        meetings = scraped or FOMC_MEETING_DATES_FALLBACK
-        source = "live from the Fed calendar" if scraped else "fallback list in constants.py (verify against federalreserve.gov)"
-        _render_policy_path(
-            path,
-            anchor,
-            meetings,
-            source,
-            meeting_label="FOMC",
-            yaxis_title="Fed funds rate (%)",
-            dot_plot=SEP_DOT_PLOT_MEDIAN,
-            dot_label=f"Dot plot median — {SEP_AS_OF}",
-        )
+# A failed fetch must not sit in the cache for its full TTL looking permanent
+# (one bad FRED call used to pin "unavailable" for an hour on the deployed
+# app) — clear so the next interaction retries.
+if not inputs.yields:
+    get_policy_inputs.clear()
+if not scraped_meetings:
+    get_meeting_dates.clear()
+
+st.caption(
+    "Data sources — "
+    + " · ".join(inputs.status)
+    + f" · Meetings: {'official calendar' if scraped_meetings else 'fallback list'}"
+)
+
+with st.sidebar:
+    anchor = st.number_input(
+        spec.anchor_label,
+        min_value=-1.0,
+        max_value=10.0,
+        value=float(inputs.anchor_rate if inputs.anchor_rate is not None else spec.anchor_fallback),
+        step=0.01,
+        format="%.2f",
+        key=f"{spec.code}_anchor",
+        help="Anchors the front of the implied path below; defaults to the live value when available.",
+    )
+
+if not inputs.yields:
+    st.info(
+        f"The {spec.label} yield-curve feed isn't available right now — the source status "
+        "above says which feeds failed, and it will retry on the next interaction. The rest "
+        "of this page is unaffected."
+    )
 else:
-    ecb_data = get_ecb_rates()
-    yields_by_years = ecb_data.get("yields", {})
-    if not yields_by_years:
-        st.info(
-            "ECB Data Portal series aren't available right now (unreachable outside Streamlit "
-            "Cloud, and can briefly rate-limit). The rest of this page is unaffected."
-        )
-    else:
-        anchor = ecb_data.get("estr") or ecb_data.get("dfr") or CURRENT_ESTR_DEFAULT
-        path = implied_forward_path(yields_by_years, anchor_rate=anchor)
-        year_end_rate = implied_rate_at(path, year_end_horizon)
-        dfr, mro = ecb_data.get("dfr"), ecb_data.get("mro")
-        metric_row(
-            [
-                ("€STR (overnight)", f"{anchor:.2f}%"),
-                (
-                    "Deposit facility / MRO",
-                    f"{dfr:.2f}% / {mro:.2f}%" if dfr is not None and mro is not None else "N/A",
-                ),
-                (
-                    f"Implied by end-{today.year}",
-                    f"{year_end_rate:.2f}%" if year_end_rate is not None else "N/A",
-                    f"{(year_end_rate - anchor) * 100:+.0f} bps" if year_end_rate is not None else None,
-                ),
-            ]
-        )
-        scraped = get_meeting_dates("ecb")
-        meetings = scraped or ECB_MEETING_DATES_FALLBACK
-        source = "live from the ECB calendar" if scraped else "fallback list in constants.py (verify against ecb.europa.eu)"
-        _render_policy_path(
-            path,
-            anchor,
-            meetings,
-            source,
-            meeting_label="ECB Governing Council",
-            yaxis_title="ECB policy rate (%)",
-        )
+    today = date.today()
+    path = implied_forward_path(inputs.yields, anchor_rate=anchor)
+    year_end_rate = implied_rate_at(path, (date(today.year, 12, 31) - today).days / 365.0)
+    metric_row(
+        [
+            (spec.anchor_metric_label, f"{anchor:.2f}%"),
+            *inputs.metrics,
+            (
+                f"Implied by end-{today.year}",
+                f"{year_end_rate:.2f}%" if year_end_rate is not None else "N/A",
+                f"{(year_end_rate - anchor) * 100:+.0f} bps" if year_end_rate is not None else None,
+            ),
+        ]
+    )
+    meetings = scraped_meetings or spec.meeting_fallback
+    source = (
+        "live from the official calendar"
+        if scraped_meetings
+        else f"fallback list in constants.py (verify against {spec.calendar_hint})"
+    )
+    _render_policy_path(
+        path,
+        anchor,
+        meetings,
+        source,
+        meeting_label=spec.meeting_label,
+        yaxis_title=spec.yaxis_title,
+        dot_plot=spec.dot_plot,
+        dot_label=spec.dot_label,
+    )

@@ -84,9 +84,22 @@ FRED_YIELD_SERIES = {
     "DGS2": 2.0,
 }
 
+# Independent official fallbacks for when FRED is unavailable (its WAF can
+# challenge non-browser clients, and Streamlit Cloud's shared egress IPs are
+# prime rate-limit targets). Both are keyless government APIs designed for
+# programmatic access, so the Fed path never depends on a single host:
+# NY Fed's markets API for the overnight rate, Treasury.gov's daily par
+# yield curve CSV for the short-end curve.
+NYFED_EFFR_URL = "https://markets.newyorkfed.org/api/rates/unsecured/effr/last/1.json"
+TREASURY_YIELD_CSV_URL = (
+    "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/"
+    "daily-treasury-rates.csv/{year}/all"
+    "?type=daily_treasury_yield_curve&field_tdr_date_value={year}&page&_format=csv"
+)
+
 # --- Editable Fed assumptions -------------------------------------------------
-# Fallback anchor if FRED's EFFR series is momentarily unavailable; the live
-# FRED value is preferred and the Rates sidebar lets the viewer override it.
+# Fallback anchor if both FRED's and NY Fed's EFFR are momentarily unavailable;
+# the live value is preferred and the Rates sidebar lets the viewer override it.
 CURRENT_EFFR_DEFAULT = 4.33
 
 # FOMC decision dates are fetched from the Fed's public calendar page at

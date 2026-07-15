@@ -97,3 +97,8 @@ def fetch_ecb_dates() -> list[date]:
     """Scraped ECB meeting dates, or [] (caller falls back to constants)."""
     html = _fetch(ECB_CALENDAR_URL)
     return parse_ecb(html) if html else []
+
+
+# Calendar dispatch by central-bank code — a new bank's scraper registers
+# here and its CentralBankSpec points at the key (see data/central_banks.py).
+FETCHERS = {"fomc": fetch_fomc_dates, "ecb": fetch_ecb_dates}

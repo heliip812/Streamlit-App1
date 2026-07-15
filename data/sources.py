@@ -15,7 +15,7 @@ import streamlit as st
 
 from config import CACHE_TTL_SECONDS
 
-from . import cb_calendar, cftc, dtcc, ecb, fred, s3_cache
+from . import cb_calendar, central_banks, cftc, dtcc, s3_cache
 from .constants import DTCC_ASSET_CLASSES
 
 
@@ -35,21 +35,22 @@ def get_cftc_positioning(contract_names: tuple[str, ...], weeks: int, report: st
     return cftc.fetch_positioning(list(contract_names), weeks, report)
 
 
-@st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=1, show_spinner="Fetching FRED rates data...")
-def get_fred_rates(series_ids: tuple[str, ...]) -> dict[str, float]:
-    return fred.fetch_fred_latest(series_ids)
-
-
-@st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=1, show_spinner="Fetching ECB rates data...")
-def get_ecb_rates() -> dict:
-    return ecb.fetch_ecb_policy_inputs()
+# One cached entry per central bank in the registry. A failed fetch must NOT
+# sit in this cache for the full TTL (that pinned a single bad FRED call as
+# "unavailable" for an hour on the deployed app) — the page clears this cache
+# whenever the returned curve is empty, so the next interaction retries.
+@st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=8, show_spinner="Fetching policy-rate data...")
+def get_policy_inputs(bank_code: str) -> central_banks.PolicyInputs:
+    return central_banks.fetch_inputs(bank_code)
 
 
 # Meeting calendars change a few times a year, so a day-long TTL is plenty and
-# keeps the best-effort scrape off the critical path on most loads.
-@st.cache_data(ttl=86400, max_entries=2, show_spinner=False)
-def get_meeting_dates(central_bank: str) -> list:
-    return cb_calendar.fetch_fomc_dates() if central_bank == "fomc" else cb_calendar.fetch_ecb_dates()
+# keeps the best-effort scrape off the critical path on most loads. As with
+# get_policy_inputs, the page clears this on an empty (failed) scrape.
+@st.cache_data(ttl=86400, max_entries=8, show_spinner=False)
+def get_meeting_dates(calendar_code: str) -> list:
+    fetcher = cb_calendar.FETCHERS.get(calendar_code)
+    return fetcher() if fetcher else []
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=1, show_spinner="Fetching cross-asset overview...")

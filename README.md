@@ -21,9 +21,12 @@ included — figures here are derived from actual reported trades, not composite
 - **Credit** — CDS index (CDX/iTraxx) vs. single-name split, most active names, spread curve by tenor
 - **Rates** — notional by tenor bucket and currency, per-currency yield curve, plus a
   **Central bank policy path** subsection: market-implied policy rate for the Fed (FRED
-  Treasury curve, FOMC dot-plot overlay) and the ECB (ECB Data Portal euro-area curve),
-  with the implied rate at each upcoming meeting; meeting dates scraped best-effort from
-  the official calendars, falling back to a maintained list
+  Treasury curve, with Treasury.gov/NY Fed fallbacks, FOMC dot-plot overlay) and the ECB
+  (ECB Data Portal euro-area curve), with the implied rate at each upcoming meeting;
+  meeting dates scraped best-effort from the official calendars with a maintained
+  fallback, and a per-source status line showing exactly which feed supplied what.
+  Central banks are registry-driven (`data/central_banks.py`) — adding one is a new
+  fetcher plus a registry entry, no page changes
 - **FX** — most active currency pairs, spot vs. forward tenor mix, forward curve
 - **Equities & Commodities** — most active underliers, tenor mix, level curve by tenor
 - **CFTC Positioning** — net long/short by trader category and open interest, for both
@@ -72,12 +75,19 @@ data/
                            (notional/currency handling, tenor, index
                            detection) — knows nothing about HTTP or files
   cftc.py                  CFTC Commitments of Traders ingestion
+  central_banks.py         Registry of central banks for the policy-path
+                           section — one CentralBankSpec per bank; adding a
+                           bank never touches page code
   fred.py                  FRED series ingestion (keyless CSV) — EFFR, target
-                           range, short-end Treasury yields; feeds fed_path.py
+                           range, short-end Treasury yields
+  us_rates.py              Composes the US inputs: FRED first, falling back
+                           per-piece to Treasury.gov (curve) and the NY Fed
+                           markets API (EFFR), with per-source status lines
   ecb.py                   ECB Data Portal ingestion (keyless CSV) — €STR,
                            deposit/MRO rates, euro-area yield curve
-  cb_calendar.py           Best-effort scrape of the Fed/ECB meeting calendars,
-                           validated, with a maintained fallback in constants.py
+  cb_calendar.py           Best-effort scrape of central-bank meeting calendars
+                           (FETCHERS dispatch), validated, with a maintained
+                           fallback in constants.py
   s3_cache.py               Optional persistent cache (see below);
                            every function is a no-op if AWS isn't configured
 ```
