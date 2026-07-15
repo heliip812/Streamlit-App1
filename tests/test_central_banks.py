@@ -10,10 +10,17 @@ def test_registry_entries_are_complete_and_unique():
     assert len(codes) == len(set(codes))
     assert len(labels) == len(set(labels))
     for spec in central_banks.CENTRAL_BANKS:
-        # Every calendar_code must resolve to a real scraper, and every spec
-        # must carry a non-empty fallback so a failed scrape still shows dates.
-        assert spec.calendar_code in cb_calendar.FETCHERS
+        # A calendar_code may or may not have a live scraper (banks without one
+        # rely on the fallback), but every spec MUST carry a non-empty fallback
+        # so meeting dates always render, and fetch must be callable.
         assert spec.meeting_fallback
+        assert callable(spec.fetch)
+
+
+def test_calendar_codes_with_scrapers_resolve():
+    # Any code that claims a scraper must actually have one registered.
+    scraped = {"fomc", "ecb"}
+    assert scraped <= set(cb_calendar.FETCHERS)
 
 
 def test_get_spec_resolves_by_code_and_label():
@@ -50,3 +57,22 @@ def test_ecb_adapter_falls_back_to_deposit_rate_anchor():
     assert inputs.anchor_rate == 1.75
     assert inputs.yields == {}
     assert any("unavailable" in line for line in inputs.status)
+
+
+def test_boe_adapter_passes_through_bank_rate_and_curve():
+    raw = {"bank_rate": 3.75, "yields": {1.0: 3.80, 2.0: 3.60}, "status": ["Curve: BoE IADB", "Bank Rate: BoE IADB"]}
+    with patch("data.central_banks.boe.fetch_boe_policy_inputs", return_value=raw):
+        inputs = central_banks.fetch_inputs("boe")
+
+    assert inputs.anchor_rate == 3.75
+    assert inputs.yields == {1.0: 3.80, 2.0: 3.60}
+
+
+def test_boj_adapter_has_no_live_anchor():
+    raw = {"yields": {1.0: 0.55, 2.0: 0.70}, "status": ["Curve: MOF JGB"]}
+    with patch("data.central_banks.boj.fetch_boj_policy_inputs", return_value=raw):
+        inputs = central_banks.fetch_inputs("boj")
+
+    assert inputs.anchor_rate is None  # page supplies the anchor from the sidebar/fallback
+    assert inputs.yields == {1.0: 0.55, 2.0: 0.70}
+    assert any("manual anchor" in line for line in inputs.status)

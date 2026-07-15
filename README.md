@@ -20,13 +20,13 @@ included — figures here are derived from actual reported trades, not composite
 - **Home** — cross-asset overview (latest-day notional/trades, multi-day trend)
 - **Credit** — CDS index (CDX/iTraxx) vs. single-name split, most active names, spread curve by tenor
 - **Rates** — notional by tenor bucket and currency, per-currency yield curve, plus a
-  **Central bank policy path** subsection: market-implied policy rate for the Fed (FRED
-  Treasury curve, with Treasury.gov/NY Fed fallbacks, FOMC dot-plot overlay) and the ECB
-  (ECB Data Portal euro-area curve), with the implied rate at each upcoming meeting;
-  meeting dates scraped best-effort from the official calendars with a maintained
-  fallback, and a per-source status line showing exactly which feed supplied what.
-  Central banks are registry-driven (`data/central_banks.py`) — adding one is a new
-  fetcher plus a registry entry, no page changes
+  **Central bank policy path** subsection: market-implied policy rate for the Fed
+  (Treasury.gov curve + NY Fed EFFR, FRED backup, FOMC dot-plot overlay), the ECB (ECB
+  Data Portal), the Bank of England (BoE IADB) and the Bank of Japan (Japan MOF JGB
+  curve), with the implied rate at each upcoming meeting and a per-source status line
+  showing exactly which feed supplied what. Central banks are registry-driven
+  (`data/central_banks.py`) — adding one is a new fetcher plus a registry entry, no
+  page changes
 - **FX** — most active currency pairs, spot vs. forward tenor mix, forward curve
 - **Equities & Commodities** — most active underliers, tenor mix, level curve by tenor
 - **CFTC Positioning** — net long/short by trader category and open interest, for both
@@ -85,6 +85,9 @@ data/
                            markets API (EFFR), with per-source status lines
   ecb.py                   ECB Data Portal ingestion (keyless CSV) — €STR,
                            deposit/MRO rates, euro-area yield curve
+  boe.py                   Bank of England IADB ingestion (keyless CSV) —
+                           Bank Rate + short gilt yields
+  boj.py                   Bank of Japan curve from the Japan MOF JGB CSV
   cb_calendar.py           Best-effort scrape of central-bank meeting calendars
                            (FETCHERS dispatch), validated, with a maintained
                            fallback in constants.py

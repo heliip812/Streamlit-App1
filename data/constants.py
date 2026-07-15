@@ -166,3 +166,47 @@ ECB_MEETING_DATES_FALLBACK = [
     date(2026, 10, 29),
     date(2026, 12, 17),
 ]
+
+# --- Bank of England ---------------------------------------------------------
+# BoE Interactive Database (IADB) keyless CSV export. Bank Rate (IUDBEDR) is
+# a solid, well-known code; the gilt-curve codes are BEST-EFFORT and the most
+# likely thing to need correction — if the curve shows "unavailable" on
+# deploy, verify the right IADB series codes and edit BOE_YIELD_CODES here.
+BOE_IADB_URL = "https://www.bankofengland.co.uk/boeapps/database/fromshowcolumns.asp"
+BOE_BANK_RATE_CODE = "IUDBEDR"
+BOE_YIELD_CODES = {
+    # IADB nominal par-yield series (code -> maturity years). BEST-EFFORT.
+    "IUDMNPY": 1.0,
+    "IUDSNPY": 2.0,
+}
+CURRENT_BANK_RATE_DEFAULT = 3.75  # fallback Bank Rate (%) if IADB is unavailable
+BOE_CALENDAR_URL = "https://www.bankofengland.co.uk/monetary-policy/upcoming-mpc-dates"
+BOE_MEETING_DATES_FALLBACK = [  # 2026 MPC decision dates — VERIFY at bankofengland.co.uk
+    date(2026, 2, 5),
+    date(2026, 3, 19),
+    date(2026, 5, 7),
+    date(2026, 6, 18),
+    date(2026, 8, 6),
+    date(2026, 9, 17),
+    date(2026, 11, 5),
+    date(2026, 12, 17),
+]
+
+# --- Bank of Japan -----------------------------------------------------------
+# Japan's Ministry of Finance publishes daily JGB yields as a keyless CSV.
+# The BoJ has no clean live policy-rate feed, so the anchor defaults to the
+# constant below (overridable in the sidebar). Column headers are BEST-EFFORT.
+BOJ_JGB_CSV_URL = "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/data/jgbcme.csv"
+BOJ_YIELD_COLUMNS = {"1Y": 1.0, "2Y": 2.0}  # CSV column header -> maturity years. BEST-EFFORT.
+CURRENT_BOJ_RATE_DEFAULT = 0.50  # fallback BoJ policy rate (%)
+BOJ_CALENDAR_URL = "https://www.boj.or.jp/en/mopo/mpmsche_minu/index.htm"
+BOJ_MEETING_DATES_FALLBACK = [  # 2026 MPM decision dates — VERIFY at boj.or.jp
+    date(2026, 1, 23),
+    date(2026, 3, 19),
+    date(2026, 4, 28),
+    date(2026, 6, 16),
+    date(2026, 7, 30),
+    date(2026, 9, 18),
+    date(2026, 10, 29),
+    date(2026, 12, 18),
+]

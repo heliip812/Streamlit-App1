@@ -22,8 +22,12 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Callable
 
-from . import ecb, us_rates
+from . import boe, boj, ecb, us_rates
 from .constants import (
+    BOE_MEETING_DATES_FALLBACK,
+    BOJ_MEETING_DATES_FALLBACK,
+    CURRENT_BANK_RATE_DEFAULT,
+    CURRENT_BOJ_RATE_DEFAULT,
     CURRENT_EFFR_DEFAULT,
     CURRENT_ESTR_DEFAULT,
     ECB_MEETING_DATES_FALLBACK,
@@ -84,6 +88,19 @@ def _ecb_inputs() -> PolicyInputs:
     return PolicyInputs(anchor, yields, metrics, status)
 
 
+def _boe_inputs() -> PolicyInputs:
+    raw = boe.fetch_boe_policy_inputs()
+    return PolicyInputs(raw.get("bank_rate"), raw.get("yields", {}), [], raw["status"])
+
+
+def _boj_inputs() -> PolicyInputs:
+    raw = boj.fetch_boj_policy_inputs()
+    # The BoJ has no clean live overnight feed, so the anchor is always the
+    # sidebar/fallback value; the page's number_input supplies it.
+    status = raw["status"] + ["Policy rate: manual anchor (no live BoJ feed)"]
+    return PolicyInputs(None, raw.get("yields", {}), [], status)
+
+
 CENTRAL_BANKS: list[CentralBankSpec] = [
     CentralBankSpec(
         code="fed",
@@ -112,6 +129,32 @@ CENTRAL_BANKS: list[CentralBankSpec] = [
         meeting_fallback=ECB_MEETING_DATES_FALLBACK,
         meeting_label="ECB Governing Council",
         yaxis_title="ECB policy rate (%)",
+    ),
+    CentralBankSpec(
+        code="boe",
+        label="Bank of England",
+        anchor_label="Current UK Bank Rate, %",
+        anchor_metric_label="Bank Rate",
+        anchor_fallback=CURRENT_BANK_RATE_DEFAULT,
+        fetch=_boe_inputs,
+        calendar_code="boe",  # no scraper yet -> fallback list is used
+        calendar_hint="bankofengland.co.uk",
+        meeting_fallback=BOE_MEETING_DATES_FALLBACK,
+        meeting_label="MPC",
+        yaxis_title="UK Bank Rate (%)",
+    ),
+    CentralBankSpec(
+        code="boj",
+        label="Bank of Japan",
+        anchor_label="Current BoJ policy rate, %",
+        anchor_metric_label="Policy rate",
+        anchor_fallback=CURRENT_BOJ_RATE_DEFAULT,
+        fetch=_boj_inputs,
+        calendar_code="boj",  # no scraper yet -> fallback list is used
+        calendar_hint="boj.or.jp",
+        meeting_fallback=BOJ_MEETING_DATES_FALLBACK,
+        meeting_label="MPM",
+        yaxis_title="BoJ policy rate (%)",
     ),
 ]
 
