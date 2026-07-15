@@ -314,7 +314,8 @@ else:
             "Cloud, and can briefly rate-limit). The rest of this page is unaffected."
         )
     else:
-        anchor = ecb_data.get("estr") or ecb_data.get("dfr") or CURRENT_ESTR_DEFAULT
+        estr, dfr_anchor = ecb_data.get("estr"), ecb_data.get("dfr")
+        anchor = estr if estr is not None else (dfr_anchor if dfr_anchor is not None else CURRENT_ESTR_DEFAULT)
         path = implied_forward_path(yields_by_years, anchor_rate=anchor)
         year_end_rate = implied_rate_at(path, year_end_horizon)
         dfr, mro = ecb_data.get("dfr"), ecb_data.get("mro")
