@@ -4,3 +4,7 @@ pyarrow>=17.0
 requests>=2.32
 plotly>=5.24
 boto3>=1.34
+
+# Rebuild marker: bump this line to force Streamlit Cloud to reinstall the
+# environment and start a clean deploy (clears stale-build state without a
+# manual reboot). Last: central-bank policy paths — Fed/ECB/BoE/BoJ.
