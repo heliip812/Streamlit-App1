@@ -161,8 +161,8 @@ CENTRAL_BANKS: list[CentralBankSpec] = [
         meeting_label="MPC",
         yaxis_title="UK Bank Rate (%)",
         sources=[
-            ("Curve & Bank Rate — Bank of England Interactive Database (IADB)", "https://www.bankofengland.co.uk/boeapps/database/"),
-            ("Official Bank Rate", "https://www.bankofengland.co.uk/monetary-policy/the-interest-rate-bank-rate"),
+            ("Curve — Bank of England sterling OIS yield curve (Excel)", "https://www.bankofengland.co.uk/statistics/yield-curves"),
+            ("Bank Rate — BoE Interactive Database (IADB)", "https://www.bankofengland.co.uk/boeapps/database/"),
         ],
     ),
     CentralBankSpec(

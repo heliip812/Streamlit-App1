@@ -168,17 +168,17 @@ ECB_MEETING_DATES_FALLBACK = [
 ]
 
 # --- Bank of England ---------------------------------------------------------
-# BoE Interactive Database (IADB) keyless CSV export. Bank Rate (IUDBEDR) is
-# a solid, well-known code; the gilt-curve codes are BEST-EFFORT and the most
-# likely thing to need correction — if the curve shows "unavailable" on
-# deploy, verify the right IADB series codes and edit BOE_YIELD_CODES here.
+# The BoE has no data API. The sterling OIS curve (the ideal market-implied
+# source) is published only as a daily Excel spreadsheet, bundled in a ZIP on
+# the yield-curves page; data/boe.py downloads it and parses the OIS spot
+# curve tolerantly. Bank Rate (the anchor) comes from the IADB CSV export,
+# which is keyless. If the curve shows unavailable, the ZIP URL below is the
+# thing to re-check (BoE occasionally renames it).
+BOE_YIELD_CURVE_ZIP_URL = (
+    "https://www.bankofengland.co.uk/-/media/boe/files/statistics/yield-curves/latest-yield-curve-data.zip"
+)
 BOE_IADB_URL = "https://www.bankofengland.co.uk/boeapps/database/fromshowcolumns.asp"
 BOE_BANK_RATE_CODE = "IUDBEDR"
-BOE_YIELD_CODES = {
-    # IADB nominal par-yield series (code -> maturity years). BEST-EFFORT.
-    "IUDMNPY": 1.0,
-    "IUDSNPY": 2.0,
-}
 CURRENT_BANK_RATE_DEFAULT = 3.75  # fallback Bank Rate (%) if IADB is unavailable
 BOE_CALENDAR_URL = "https://www.bankofengland.co.uk/monetary-policy/upcoming-mpc-dates"
 BOE_MEETING_DATES_FALLBACK = [  # 2026 MPC decision dates — VERIFY at bankofengland.co.uk

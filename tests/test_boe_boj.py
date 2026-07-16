@@ -1,5 +1,7 @@
+from datetime import datetime
 from unittest.mock import Mock, patch
 
+import pandas as pd
 import requests
 
 from data import boe, boj
@@ -12,29 +14,53 @@ def _fake_response(text):
     return resp
 
 
-def test_boe_iadb_takes_latest_value_per_code():
-    csv_text = "DATE,IUDBEDR,IUDMNPY,IUDSNPY\n30 Jun 2026,3.75,3.80,3.60\n01 Jul 2026,3.75,,3.58\n"
+def test_boe_iadb_takes_latest_bank_rate():
+    csv_text = "DATE,IUDBEDR\n30 Jun 2026,3.75\n01 Jul 2026,3.75\n"
     with patch("data.boe.requests.get", return_value=_fake_response(csv_text)):
-        out = boe._fetch_iadb(("IUDBEDR", "IUDMNPY", "IUDSNPY"))
+        out = boe._fetch_iadb(("IUDBEDR",))
 
     assert out["IUDBEDR"] == 3.75
-    assert out["IUDMNPY"] == 3.80  # blank on the last row -> falls back to prior real value
-    assert out["IUDSNPY"] == 3.58
 
 
-def test_boe_policy_inputs_maps_codes_to_maturities():
-    # BOE_YIELD_CODES maps IUDMNPY->1.0, IUDSNPY->2.0 (best-effort defaults).
-    fake = {"IUDBEDR": 3.75, "IUDMNPY": 3.80, "IUDSNPY": 3.60}
-    with patch("data.boe._fetch_iadb", return_value=fake):
+def test_boe_extract_short_end_from_spot_sheet():
+    # A header=None spot-curve sheet: title/blank rows, a maturity header row,
+    # then dated yield rows. The maturity row is found relative to the first
+    # dated row, and the latest dated row's yields are returned.
+    df = pd.DataFrame(
+        [
+            ["United Kingdom sterling OIS spot curve", None, None, None],
+            [None, None, None, None],
+            ["years:", 0.5, 1.0, 2.0],
+            [datetime(2026, 7, 10), 4.10, 3.95, 3.70],
+            [datetime(2026, 7, 13), 4.08, 3.92, 3.68],
+        ]
+    )
+
+    assert boe._extract_short_end(df) == {0.5: 4.08, 1.0: 3.92, 2.0: 3.68}
+
+
+def test_boe_extract_short_end_empty_without_dated_rows():
+    df = pd.DataFrame([["years:", 0.5, 1.0, 2.0], ["no", "dates", "here", "x"]])
+    assert boe._extract_short_end(df) == {}
+
+
+def test_boe_policy_inputs_combines_curve_and_bank_rate():
+    with (
+        patch("data.boe._fetch_ois_curve", return_value={0.5: 4.05, 1.0: 3.90, 2.0: 3.65}),
+        patch("data.boe._fetch_iadb", return_value={"IUDBEDR": 3.75}),
+    ):
         out = boe.fetch_boe_policy_inputs()
 
     assert out["bank_rate"] == 3.75
-    assert out["yields"] == {1.0: 3.80, 2.0: 3.60}
-    assert any("BoE IADB" in line for line in out["status"])
+    assert out["yields"] == {0.5: 4.05, 1.0: 3.90, 2.0: 3.65}
+    assert any("OIS spreadsheet" in line for line in out["status"])
 
 
 def test_boe_reports_unavailable_curve_on_failure():
-    with patch("data.boe.requests.get", side_effect=requests.ConnectionError("boom")):
+    with (
+        patch("data.boe._fetch_ois_curve", return_value={}),
+        patch("data.boe._fetch_iadb", return_value={}),
+    ):
         out = boe.fetch_boe_policy_inputs()
 
     assert out["yields"] == {}

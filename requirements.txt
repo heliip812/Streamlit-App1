@@ -4,7 +4,8 @@ pyarrow>=17.0
 requests>=2.32
 plotly>=5.24
 boto3>=1.34
+openpyxl>=3.1
 
 # Rebuild marker: bump this line to force Streamlit Cloud to reinstall the
 # environment and start a clean deploy (clears stale-build state without a
-# manual reboot). Last: BoJ source fix (MOF jgbcme_all.csv, header row).
+# manual reboot). Last: BoE OIS Excel parsing + openpyxl dep.
