@@ -38,14 +38,17 @@ def _jgb_yields() -> dict[float, float]:
 
     if df.empty:
         return {}
+    df.columns = [str(c).strip() for c in df.columns]
     latest = df.iloc[-1]
     out = {}
-    for column, maturity_years in BOJ_YIELD_COLUMNS.items():
-        if column not in df.columns:
-            continue
-        value = pd.to_numeric(pd.Series([latest[column]]), errors="coerce").iloc[0]
-        if pd.notna(value):
-            out[maturity_years] = float(value)
+    for maturity_years, candidates in BOJ_YIELD_COLUMNS.items():
+        for column in candidates:
+            if column not in df.columns:
+                continue
+            value = pd.to_numeric(pd.Series([latest[column]]), errors="coerce").iloc[0]
+            if pd.notna(value):
+                out[maturity_years] = float(value)
+                break
     return out
 
 

@@ -197,7 +197,9 @@ BOE_MEETING_DATES_FALLBACK = [  # 2026 MPC decision dates — VERIFY at bankofen
 # The BoJ has no clean live policy-rate feed, so the anchor defaults to the
 # constant below (overridable in the sidebar). Column headers are BEST-EFFORT.
 BOJ_JGB_CSV_URL = "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/data/jgbcme.csv"
-BOJ_YIELD_COLUMNS = {"1Y": 1.0, "2Y": 2.0}  # CSV column header -> maturity years. BEST-EFFORT.
+# maturity years -> candidate CSV column headers (the MOF file's exact headers
+# are best-effort; the first candidate that exists wins).
+BOJ_YIELD_COLUMNS = {1.0: ("1Y", "1", "1 Year"), 2.0: ("2Y", "2", "2 Year")}
 CURRENT_BOJ_RATE_DEFAULT = 0.50  # fallback BoJ policy rate (%)
 BOJ_CALENDAR_URL = "https://www.boj.or.jp/en/mopo/mpmsche_minu/index.htm"
 BOJ_MEETING_DATES_FALLBACK = [  # 2026 MPM decision dates — VERIFY at boj.or.jp

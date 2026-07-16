@@ -178,11 +178,14 @@ st.caption(
 # missing rates feed never halts the DTCC content above it.
 
 
+def _maturity_label(years: float) -> str:
+    return {1 / 12: "1M", 0.25: "3M", 0.5: "6M", 1.0: "1Y", 2.0: "2Y"}.get(years, f"{years:g}Y")
+
+
 def _render_policy_path(path, anchor_rate, meeting_dates, meeting_source, *, meeting_label, yaxis_title, dot_plot=None, dot_label=None):
-    """Shared render of an implied-path chart + per-meeting table for either
-    central bank: the path plotted against calendar dates, an optional
-    dot-plot overlay (Fed only), and the interpolated implied rate at each
-    upcoming meeting."""
+    """The implied-path chart plus the per-meeting implied-rate table, shown
+    inline (not collapsed) so the meeting-by-meeting detail is visible, not
+    just the year-end figure."""
     today = date.today()
     path_dates = [today + pd.Timedelta(days=round(h * 365)) for h in path["horizon_years"]]
     last_date = path_dates[-1]
@@ -213,33 +216,64 @@ def _render_policy_path(path, anchor_rate, meeting_dates, meeting_source, *, mee
     fig.update_layout(yaxis_title=yaxis_title, legend_title=None, hovermode="x unified")
     render(fig)
 
-    with st.expander(f"Implied rate at each upcoming {meeting_label} meeting"):
-        prior_rate = anchor_rate
-        rows = []
-        for meeting in sorted(meeting_dates):
-            if meeting < today or meeting > last_date:
-                continue
-            rate = implied_rate_at(path, (meeting - today).days / 365.0)
-            if rate is None:
-                continue
-            rows.append(
-                {
-                    "Meeting": meeting.strftime("%d %b %Y"),
-                    "Implied rate (%)": round(rate, 3),
-                    "Cumulative vs now (bps)": round((rate - anchor_rate) * 100, 0),
-                    "Change since prior meeting (bps)": round((rate - prior_rate) * 100, 0),
-                }
+    st.markdown(f"**Implied rate at each upcoming {meeting_label} meeting**")
+    prior_rate = anchor_rate
+    rows = []
+    for meeting in sorted(meeting_dates):
+        if meeting < today or meeting > last_date:
+            continue
+        rate = implied_rate_at(path, (meeting - today).days / 365.0)
+        if rate is None:
+            continue
+        rows.append(
+            {
+                "Meeting": meeting.strftime("%d %b %Y"),
+                "Implied rate (%)": round(rate, 3),
+                "Cumulative vs now (bps)": round((rate - anchor_rate) * 100, 0),
+                "Change since prior meeting (bps)": round((rate - prior_rate) * 100, 0),
+            }
+        )
+        prior_rate = rate
+    if rows:
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    else:
+        st.caption(f"No upcoming {meeting_label} meetings fall within the curve's horizon.")
+    st.caption(f"Meeting dates: {meeting_source}.")
+
+
+def _render_sources_panel(spec, raw_yields, anchor_rate, status):
+    """A collapsible 'show your work' panel for validation: the exact raw
+    sources (tap to check them), the actual yields fetched, and the formula
+    that turns them into the implied path. Shown for every bank — including
+    ones with no data, so an empty curve is diagnosable from the source link."""
+    with st.expander("Data source & how it's derived (for validation)"):
+        st.markdown("**Live status:** " + " · ".join(status))
+
+        st.markdown("**Raw sources** (tap to verify the numbers against the origin):")
+        for label, url in spec.sources:
+            st.markdown(f"- [{label}]({url})")
+
+        if raw_yields:
+            st.markdown("**Raw curve fetched** (the exact inputs to the calculation):")
+            curve = pd.DataFrame(
+                [{"Maturity": _maturity_label(y), "Market yield (%)": round(raw_yields[y], 3)} for y in sorted(raw_yields)]
             )
-            prior_rate = rate
-        if rows:
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            st.dataframe(curve, use_container_width=True, hide_index=True)
+            st.caption(f"Overnight anchor used: {anchor_rate:.2f}% (at horizon 0).")
         else:
-            st.caption(f"No upcoming {meeting_label} meetings fall within the curve's horizon.")
-        st.caption(
-            f"Meeting dates: {meeting_source}. Implied rates are read off the government-curve "
-            "forward path at each meeting date (interpolated), not a meeting-by-meeting "
-            "probability model — the curve reflects continuous expectations, not discrete "
-            "decisions."
+            st.markdown("**Raw curve fetched:** none — the curve source above returned no usable data.")
+
+        st.markdown(
+            "**Method.** A yield to maturity *t* is (roughly) the market's expected *average* "
+            "overnight rate over the next *t* years, so the implied **forward** rate between two "
+            "maturities is the expected average over that future window:\n\n"
+            "```\nforward(a, b) = (yield_b × b − yield_a × a) / (b − a)\n```\n\n"
+            "Chaining these forwards across the maturities above, anchored at horizon 0 to the "
+            "overnight rate, traces the implied path; the meeting table reads that path at each "
+            "meeting date (interpolated). It is a government-curve **proxy**: it carries a little "
+            "term premium and safe-haven/collateral richness, so it reads marginally more dovish "
+            "than a pure OIS/futures measure — right on direction and rough magnitude, not "
+            "basis-point-exact, and not a discrete hike/cut probability model."
         )
 
 
@@ -286,8 +320,9 @@ with st.sidebar:
 if not inputs.yields:
     st.info(
         f"The {spec.label} yield-curve feed isn't available right now — the source status "
-        "above says which feeds failed, and it will retry on the next interaction. The rest "
-        "of this page is unaffected."
+        "above says which feeds failed, and it will retry on the next interaction. Open the "
+        "panel below to see (and tap) the exact source it's trying. The rest of this page is "
+        "unaffected."
     )
 else:
     today = date.today()
@@ -320,3 +355,5 @@ else:
         dot_plot=spec.dot_plot,
         dot_label=spec.dot_label,
     )
+
+_render_sources_panel(spec, inputs.yields, anchor, inputs.status)

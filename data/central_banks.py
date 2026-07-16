@@ -58,6 +58,9 @@ class CentralBankSpec:
     meeting_fallback: list[date]
     meeting_label: str  # e.g. "FOMC"
     yaxis_title: str
+    # (label, url) references shown in the "Data source & method" panel so the
+    # numbers can be validated against the raw source.
+    sources: list[tuple[str, str]] = field(default_factory=list)
     dot_plot: dict[int, float] | None = field(default=None)  # year -> projected rate
     dot_label: str | None = field(default=None)
 
@@ -114,6 +117,14 @@ CENTRAL_BANKS: list[CentralBankSpec] = [
         meeting_fallback=FOMC_MEETING_DATES_FALLBACK,
         meeting_label="FOMC",
         yaxis_title="Fed funds rate (%)",
+        sources=[
+            (
+                "Curve — U.S. Treasury daily par yield curve",
+                "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_yield_curve",
+            ),
+            ("Overnight anchor — NY Fed Effective Federal Funds Rate", "https://www.newyorkfed.org/markets/reference-rates/effr"),
+            ("Backup — FRED (DGS* / DFF / DFEDTAR*)", "https://fred.stlouisfed.org/graph/?id=DGS3MO"),
+        ],
         dot_plot=SEP_DOT_PLOT_MEDIAN,
         dot_label=f"Dot plot median — {SEP_AS_OF}",
     ),
@@ -129,6 +140,13 @@ CENTRAL_BANKS: list[CentralBankSpec] = [
         meeting_fallback=ECB_MEETING_DATES_FALLBACK,
         meeting_label="ECB Governing Council",
         yaxis_title="ECB policy rate (%)",
+        sources=[
+            ("Curve — ECB Data Portal, euro-area AAA yield curve (YC)", "https://data.ecb.europa.eu/data/datasets/YC"),
+            (
+                "€STR & key rates — ECB Data Portal (EST / FM)",
+                "https://www.ecb.europa.eu/stats/financial_markets_and_interest_rates/euro_short-term_rate/html/index.en.html",
+            ),
+        ],
     ),
     CentralBankSpec(
         code="boe",
@@ -142,6 +160,10 @@ CENTRAL_BANKS: list[CentralBankSpec] = [
         meeting_fallback=BOE_MEETING_DATES_FALLBACK,
         meeting_label="MPC",
         yaxis_title="UK Bank Rate (%)",
+        sources=[
+            ("Curve & Bank Rate — Bank of England Interactive Database (IADB)", "https://www.bankofengland.co.uk/boeapps/database/"),
+            ("Official Bank Rate", "https://www.bankofengland.co.uk/monetary-policy/the-interest-rate-bank-rate"),
+        ],
     ),
     CentralBankSpec(
         code="boj",
@@ -155,6 +177,10 @@ CENTRAL_BANKS: list[CentralBankSpec] = [
         meeting_fallback=BOJ_MEETING_DATES_FALLBACK,
         meeting_label="MPM",
         yaxis_title="BoJ policy rate (%)",
+        sources=[
+            ("Curve — Japan MOF, JGB interest rates (daily CSV)", "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/index.htm"),
+            ("Policy rate — Bank of Japan", "https://www.boj.or.jp/en/statistics/boj/other/mci/index.htm"),
+        ],
     ),
 ]
 
