@@ -42,7 +42,13 @@ def test_boe_reports_unavailable_curve_on_failure():
 
 
 def test_boj_jgb_parses_latest_row():
-    csv_text = "Date,1Y,2Y,5Y,10Y\n2026-07-10,0.54,0.68,0.90,1.20\n2026-07-13,0.55,0.70,0.92,1.22\n"
+    # The MOF file has a metadata line before the header (parsed with header=1).
+    csv_text = (
+        "Average Compound Yield etc. (metadata line)\n"
+        "Date,1Y,2Y,5Y,10Y\n"
+        "2026-07-10,0.54,0.68,0.90,1.20\n"
+        "2026-07-13,0.55,0.70,0.92,1.22\n"
+    )
     with patch("data.boj.requests.get", return_value=_fake_response(csv_text)):
         out = boj._jgb_yields()
 

@@ -17,7 +17,7 @@ import io
 import pandas as pd
 import requests
 
-from .constants import BOJ_JGB_CSV_URL, BOJ_YIELD_COLUMNS
+from .constants import BOJ_JGB_CSV_URL, BOJ_JGB_HEADER_ROW, BOJ_YIELD_COLUMNS
 
 _REQUEST_TIMEOUT = 30
 _HEADERS = {
@@ -30,9 +30,8 @@ def _jgb_yields() -> dict[float, float]:
     try:
         resp = requests.get(BOJ_JGB_CSV_URL, headers=_HEADERS, timeout=_REQUEST_TIMEOUT)
         resp.raise_for_status()
-        # The MOF file carries a couple of preamble lines before the header
-        # row; skip rows that don't parse rather than assuming an exact layout.
-        df = pd.read_csv(io.StringIO(resp.text))
+        # The MOF file carries a metadata row before the real header.
+        df = pd.read_csv(io.StringIO(resp.text), header=BOJ_JGB_HEADER_ROW)
     except (requests.RequestException, ValueError, pd.errors.ParserError):
         return {}
 
