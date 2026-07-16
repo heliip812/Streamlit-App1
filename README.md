@@ -19,19 +19,18 @@ included — figures here are derived from actual reported trades, not composite
 
 - **Home** — cross-asset overview (latest-day notional/trades, multi-day trend)
 - **Credit** — CDS index (CDX/iTraxx) vs. single-name split, most active names, spread curve by tenor
-- **Rates** — notional by tenor bucket and currency, per-currency yield curve, plus a
-  **Central bank policy path** subsection: market-implied policy rate for the Fed
-  (Treasury.gov curve + NY Fed EFFR, FRED backup, FOMC dot-plot overlay), the ECB (ECB
-  Data Portal), the Bank of England (BoE IADB) and the Bank of Japan (Japan MOF JGB
-  curve), with the implied rate at each upcoming meeting and a per-source status line
-  showing exactly which feed supplied what. Central banks are registry-driven
-  (`data/central_banks.py`) — adding one is a new fetcher plus a registry entry, no
-  page changes
+- **Rates** — notional by tenor bucket and currency, per-currency yield curve
 - **FX** — most active currency pairs, spot vs. forward tenor mix, forward curve
 - **Equities & Commodities** — most active underliers, tenor mix, level curve by tenor
 - **CFTC Positioning** — net long/short by trader category and open interest, for both
   financial futures (rates/FX/equity index) and commodity futures (WTI, gold, corn, etc.),
   plus positioning-extreme flags (percentile + z-score crowding signals)
+- **Central Bank Paths** — market-implied policy rate for the Fed (Treasury.gov curve +
+  NY Fed EFFR, FRED backup, FOMC dot-plot overlay), the ECB (ECB Data Portal), the Bank of
+  England (sterling OIS curve) and the Bank of Japan (Japan MOF JGB curve), with the implied
+  rate at each upcoming meeting, a per-source status line, and a "show your work" validation
+  panel. Central banks are registry-driven (`data/central_banks.py`) — adding one is a new
+  fetcher plus a registry entry, no page changes
 Most DTCC/CFTC pages also carry a **Trading signals** row (trend percentile, curve-shape
 relative value, and flow vs. the window average) and a collapsible trade-level detail table.
 
@@ -45,11 +44,12 @@ pages/                    One file per page, auto-discovered by Streamlit
   3_FX.py
   4_Equities_and_Commodities.py
   5_CFTC_Positioning.py
+  6_Central_Bank_Paths.py
 config.py                 Tunables: lookback slider ranges, cache TTL
-fed_path.py                Pure market-implied Fed-path math (short-end
-                           Treasury yields -> implied forward rate path +
-                           interpolation), no Streamlit/network so it's fully
-                           unit-tested; rendered as a subsection of Rates
+fed_path.py                Pure market-implied path math (short-end yields ->
+                           implied forward rate path + interpolation), no
+                           Streamlit/network so it's fully unit-tested; drives
+                           the Central Bank Paths page
 ui.py                      Shared Streamlit widgets: sidebar date/lookback
                            controls, chart chrome + render, metric rows,
                            empty-state banners — every page uses these

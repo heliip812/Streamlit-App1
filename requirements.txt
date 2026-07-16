@@ -8,4 +8,4 @@ openpyxl>=3.1
 
 # Rebuild marker: bump this line to force Streamlit Cloud to reinstall the
 # environment and start a clean deploy (clears stale-build state without a
-# manual reboot). Last: BoE OIS Excel parsing + openpyxl dep.
+# manual reboot). Last: moved central-bank paths to their own page.
