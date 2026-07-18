@@ -55,8 +55,12 @@ def _nyfed_effr() -> float | None:
         return None
 
 
-def _treasury_yields() -> dict[float, float]:
-    """Latest short-end par yields from Treasury.gov's daily CSV, or {}."""
+def _treasury_history() -> dict:
+    """Every dated short-end curve in Treasury.gov's daily CSV: {date: {maturity: yield}}.
+
+    Returns the whole year's rows (not just the latest) so the page can compare
+    today's implied path against a prior date's. Empty dict on any failure.
+    """
     url = TREASURY_YIELD_CSV_URL.format(year=date.today().year)
     try:
         resp = requests.get(url, headers=_HEADERS, timeout=_REQUEST_TIMEOUT)
@@ -69,18 +73,18 @@ def _treasury_yields() -> dict[float, float]:
         return {}
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
     df = df.dropna(subset=["Date"]).sort_values("Date")
-    if df.empty:
-        return {}
 
-    latest = df.iloc[-1]
-    out = {}
-    for column, maturity_years in _TREASURY_COLUMNS.items():
-        if column not in df.columns:
-            continue
-        value = pd.to_numeric(pd.Series([latest[column]]), errors="coerce").iloc[0]
-        if pd.notna(value):
-            out[maturity_years] = float(value)
-    return out
+    columns = [c for c in _TREASURY_COLUMNS if c in df.columns]
+    history = {}
+    for _, row in df.iterrows():
+        curve = {}
+        for column in columns:
+            value = pd.to_numeric(pd.Series([row[column]]), errors="coerce").iloc[0]
+            if pd.notna(value):
+                curve[_TREASURY_COLUMNS[column]] = float(value)
+        if curve:
+            history[row["Date"].date()] = curve
+    return history
 
 
 def fetch_policy_inputs() -> dict:
@@ -101,8 +105,9 @@ def fetch_policy_inputs() -> dict:
     fred_data = fred.fetch_fred_latest(fred_series)
     status = []
 
-    yields = _treasury_yields()
-    if yields:
+    history = _treasury_history()
+    if history:
+        yields = history[max(history)]
         status.append("Curve: Treasury.gov")
     else:
         yields = {FRED_YIELD_SERIES[sid]: fred_data[sid] for sid in FRED_YIELD_SERIES if sid in fred_data}
@@ -119,4 +124,4 @@ def fetch_policy_inputs() -> dict:
     if FRED_TARGET_LOWER_SERIES in fred_data and FRED_TARGET_UPPER_SERIES in fred_data:
         target_range = (fred_data[FRED_TARGET_LOWER_SERIES], fred_data[FRED_TARGET_UPPER_SERIES])
 
-    return {"anchor": anchor, "target_range": target_range, "yields": yields, "status": status}
+    return {"anchor": anchor, "target_range": target_range, "yields": yields, "history": history, "status": status}

@@ -25,8 +25,25 @@ _HEADERS = {
 }
 
 
-def _jgb_yields() -> dict[float, float]:
-    """Latest-row short JGB yields keyed by maturity in years, or {} on failure."""
+def _row_curve(row, columns: list[str]) -> dict[float, float]:
+    curve = {}
+    for maturity_years, candidates in BOJ_YIELD_COLUMNS.items():
+        for column in candidates:
+            if column in columns:
+                value = pd.to_numeric(pd.Series([row[column]]), errors="coerce").iloc[0]
+                if pd.notna(value):
+                    curve[maturity_years] = float(value)
+                    break
+    return curve
+
+
+def _jgb_history(recent: int = 150) -> dict:
+    """Recent short JGB curves keyed by date: {date: {maturity: yield}}, or {}.
+
+    The all-history MOF file goes back to 1974; we keep only the last `recent`
+    rows so the page can compare today's path against a prior date's without
+    carrying decades of data.
+    """
     try:
         resp = requests.get(BOJ_JGB_CSV_URL, headers=_HEADERS, timeout=_REQUEST_TIMEOUT)
         resp.raise_for_status()
@@ -38,21 +55,23 @@ def _jgb_yields() -> dict[float, float]:
     if df.empty:
         return {}
     df.columns = [str(c).strip() for c in df.columns]
-    latest = df.iloc[-1]
-    out = {}
-    for maturity_years, candidates in BOJ_YIELD_COLUMNS.items():
-        for column in candidates:
-            if column not in df.columns:
-                continue
-            value = pd.to_numeric(pd.Series([latest[column]]), errors="coerce").iloc[0]
-            if pd.notna(value):
-                out[maturity_years] = float(value)
-                break
-    return out
+    columns = list(df.columns)
+    date_col = columns[0]
+    df = df.tail(recent).copy()
+    df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+    df = df.dropna(subset=[date_col])
+
+    history = {}
+    for _, row in df.iterrows():
+        curve = _row_curve(row, columns)
+        if curve:
+            history[row[date_col].date()] = curve
+    return history
 
 
 def fetch_boj_policy_inputs() -> dict:
-    """{"yields": {maturity_years: rate}, "status": [...]}"""
-    yields = _jgb_yields()
+    """{"yields": {maturity_years: rate}, "history": {date: curve}, "status": [...]}"""
+    history = _jgb_history()
+    yields = history[max(history)] if history else {}
     status = ["Curve: MOF JGB" if yields else "Curve: unavailable (MOF JGB — check the CSV columns)"]
-    return {"yields": yields, "status": status}
+    return {"yields": yields, "history": history, "status": status}

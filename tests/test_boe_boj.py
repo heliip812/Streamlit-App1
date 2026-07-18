@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from unittest.mock import Mock, patch
 
 import pandas as pd
@@ -44,21 +44,39 @@ def test_boe_extract_short_end_empty_without_dated_rows():
     assert boe._extract_short_end(df) == {}
 
 
+def test_boe_extract_history_returns_all_dated_rows():
+    df = pd.DataFrame(
+        [
+            ["United Kingdom sterling OIS spot curve", None, None, None],
+            ["years:", 0.5, 1.0, 2.0],
+            [datetime(2026, 7, 10), 4.10, 3.95, 3.70],
+            [datetime(2026, 7, 13), 4.08, 3.92, 3.68],
+        ]
+    )
+
+    history = boe._extract_history(df)
+
+    assert set(history) == {date(2026, 7, 10), date(2026, 7, 13)}
+    assert history[date(2026, 7, 13)] == {0.5: 4.08, 1.0: 3.92, 2.0: 3.68}
+
+
 def test_boe_policy_inputs_combines_curve_and_bank_rate():
+    history = {date(2026, 7, 10): {0.5: 4.10}, date(2026, 7, 13): {0.5: 4.05, 1.0: 3.90, 2.0: 3.65}}
     with (
-        patch("data.boe._fetch_ois_curve", return_value={0.5: 4.05, 1.0: 3.90, 2.0: 3.65}),
+        patch("data.boe._fetch_ois_history", return_value=history),
         patch("data.boe._fetch_iadb", return_value={"IUDBEDR": 3.75}),
     ):
         out = boe.fetch_boe_policy_inputs()
 
     assert out["bank_rate"] == 3.75
-    assert out["yields"] == {0.5: 4.05, 1.0: 3.90, 2.0: 3.65}
+    assert out["yields"] == {0.5: 4.05, 1.0: 3.90, 2.0: 3.65}  # latest dated curve
+    assert date(2026, 7, 10) in out["history"]
     assert any("OIS spreadsheet" in line for line in out["status"])
 
 
 def test_boe_reports_unavailable_curve_on_failure():
     with (
-        patch("data.boe._fetch_ois_curve", return_value={}),
+        patch("data.boe._fetch_ois_history", return_value={}),
         patch("data.boe._fetch_iadb", return_value={}),
     ):
         out = boe.fetch_boe_policy_inputs()
@@ -67,7 +85,7 @@ def test_boe_reports_unavailable_curve_on_failure():
     assert any("unavailable" in line for line in out["status"])
 
 
-def test_boj_jgb_parses_latest_row():
+def test_boj_jgb_history_parses_rows():
     # The MOF file has a metadata line before the header (parsed with header=1).
     csv_text = (
         "Average Compound Yield etc. (metadata line)\n"
@@ -76,9 +94,18 @@ def test_boj_jgb_parses_latest_row():
         "2026-07-13,0.55,0.70,0.92,1.22\n"
     )
     with patch("data.boj.requests.get", return_value=_fake_response(csv_text)):
-        out = boj._jgb_yields()
+        history = boj._jgb_history()
 
-    assert out == {1.0: 0.55, 2.0: 0.70}  # latest row, only mapped maturities
+    assert set(history) == {date(2026, 7, 10), date(2026, 7, 13)}
+    assert history[date(2026, 7, 13)] == {1.0: 0.55, 2.0: 0.70}  # only mapped maturities
+
+
+def test_boj_fetch_derives_latest_curve_from_history():
+    with patch("data.boj._jgb_history", return_value={date(2026, 7, 10): {1.0: 0.54}, date(2026, 7, 13): {1.0: 0.55, 2.0: 0.70}}):
+        out = boj.fetch_boj_policy_inputs()
+
+    assert out["yields"] == {1.0: 0.55, 2.0: 0.70}
+    assert date(2026, 7, 10) in out["history"]
 
 
 def test_boj_reports_unavailable_on_failure():

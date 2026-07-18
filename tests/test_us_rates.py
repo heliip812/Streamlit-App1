@@ -1,3 +1,4 @@
+from datetime import date
 from unittest.mock import Mock, patch
 
 import requests
@@ -30,16 +31,18 @@ _FULL_FRED = {
 def test_prefers_treasury_and_nyfed_for_curve_and_anchor():
     # Government APIs win for curve + anchor; FRED is still used for the
     # target range (only it carries that), even when the primaries succeed.
+    history = {date(2026, 7, 13): {0.25: 4.21, 2.0: 3.72}}
     with (
         patch("data.us_rates.fred.fetch_fred_latest", return_value=_FULL_FRED),
-        patch.object(us_rates, "_treasury_yields", return_value={0.25: 4.21, 2.0: 3.72}),
+        patch.object(us_rates, "_treasury_history", return_value=history),
         patch.object(us_rates, "_nyfed_effr", return_value=4.34),
     ):
         out = us_rates.fetch_policy_inputs()
 
-    assert out["yields"] == {0.25: 4.21, 2.0: 3.72}  # from Treasury.gov, not FRED's 4.20
+    assert out["yields"] == {0.25: 4.21, 2.0: 3.72}  # latest Treasury.gov row, not FRED's 4.20
     assert out["anchor"] == 4.34  # from NY Fed, not FRED's 4.33
     assert out["target_range"] == (4.25, 4.50)  # still from FRED
+    assert out["history"] == history
     assert any("Treasury.gov" in line for line in out["status"])
     assert any("NY Fed" in line for line in out["status"])
 
@@ -47,7 +50,7 @@ def test_prefers_treasury_and_nyfed_for_curve_and_anchor():
 def test_falls_back_to_fred_when_government_apis_fail():
     with (
         patch("data.us_rates.fred.fetch_fred_latest", return_value=_FULL_FRED),
-        patch.object(us_rates, "_treasury_yields", return_value={}),
+        patch.object(us_rates, "_treasury_history", return_value={}),
         patch.object(us_rates, "_nyfed_effr", return_value=None),
     ):
         out = us_rates.fetch_policy_inputs()
@@ -61,7 +64,7 @@ def test_falls_back_to_fred_when_government_apis_fail():
 def test_reports_unavailable_when_everything_fails():
     with (
         patch("data.us_rates.fred.fetch_fred_latest", return_value={}),
-        patch.object(us_rates, "_treasury_yields", return_value={}),
+        patch.object(us_rates, "_treasury_history", return_value={}),
         patch.object(us_rates, "_nyfed_effr", return_value=None),
     ):
         out = us_rates.fetch_policy_inputs()
@@ -71,25 +74,27 @@ def test_reports_unavailable_when_everything_fails():
     assert any("unavailable" in line for line in out["status"])
 
 
-def test_treasury_parser_takes_latest_date_and_skips_missing():
-    # Rows deliberately out of order; "2 Yr" missing on the latest row must be
-    # skipped, not carried from an older row.
+def test_treasury_history_parses_all_rows_and_skips_missing():
+    # "2 Yr" is blank on the latest row -> that date's curve omits 2Y (not
+    # carried from an older row); every dated row becomes a curve.
     csv_text = (
         'Date,"1 Mo","2 Mo","3 Mo","6 Mo","1 Yr","2 Yr"\n'
         "07/10/2026,4.31,4.28,4.22,4.07,3.87,3.72\n"
         "07/13/2026,4.30,4.27,4.20,4.05,3.85,\n"
     )
     with patch("data.us_rates.requests.get", return_value=_fake_response(text=csv_text)):
-        out = us_rates._treasury_yields()
+        history = us_rates._treasury_history()
 
-    assert out[0.25] == 4.20  # from the 07/13 row
-    assert 2.0 not in out  # blank on the latest row -> omitted
-    assert 1 / 12 in out
+    assert set(history) == {date(2026, 7, 10), date(2026, 7, 13)}
+    latest = history[date(2026, 7, 13)]
+    assert latest[0.25] == 4.20
+    assert 2.0 not in latest  # blank -> omitted
+    assert history[date(2026, 7, 10)][2.0] == 3.72  # prior date still has it
 
 
-def test_treasury_parser_empty_on_network_error():
+def test_treasury_history_empty_on_network_error():
     with patch("data.us_rates.requests.get", side_effect=requests.ConnectionError("boom")):
-        assert us_rates._treasury_yields() == {}
+        assert us_rates._treasury_history() == {}
 
 
 def test_nyfed_parser_reads_percent_rate():

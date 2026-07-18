@@ -29,8 +29,10 @@ included — figures here are derived from actual reported trades, not composite
   NY Fed EFFR, FRED backup, FOMC dot-plot overlay), the ECB (ECB Data Portal), the Bank of
   England (sterling OIS curve) and the Bank of Japan (Japan MOF JGB curve), with the implied
   rate at each upcoming meeting, a per-source status line, and a "show your work" validation
-  panel. Central banks are registry-driven (`data/central_banks.py`) — adding one is a new
-  fetcher plus a registry entry, no page changes
+  panel. An optional **as-of compare** overlays the path as it was priced on an earlier date
+  (from each source's own history) and shows how each meeting has repriced since. Central
+  banks are registry-driven (`data/central_banks.py`) — adding one is a new fetcher plus a
+  registry entry, no page changes
 Most DTCC/CFTC pages also carry a **Trading signals** row (trend percentile, curve-shape
 relative value, and flow vs. the window average) and a collapsible trade-level detail table.
 

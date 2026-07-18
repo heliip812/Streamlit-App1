@@ -8,4 +8,4 @@ openpyxl>=3.1
 
 # Rebuild marker: bump this line to force Streamlit Cloud to reinstall the
 # environment and start a clean deploy (clears stale-build state without a
-# manual reboot). Last: real June-2026 dot plot + ECB meeting-date fallback fix.
+# manual reboot). Last: as-of compare (overlay a prior date + repricing column).

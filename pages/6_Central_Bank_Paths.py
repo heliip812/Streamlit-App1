@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -25,15 +25,38 @@ def _maturity_label(years: float) -> str:
     return {1 / 12: "1M", 0.25: "3M", 0.5: "6M", 1.0: "1Y", 2.0: "2Y"}.get(years, f"{years:g}Y")
 
 
-def _render_policy_path(path, anchor_rate, meeting_dates, meeting_source, *, meeting_label, yaxis_title, dot_plot=None, dot_label=None):
+def _curve_as_of(history, target_date):
+    """Nearest available curve on or before target_date: (actual_date, curve)."""
+    eligible = [d for d in history if d <= target_date]
+    if not eligible:
+        return None, {}
+    day = max(eligible)
+    return day, history[day]
+
+
+def _render_policy_path(
+    path, anchor_rate, meeting_dates, meeting_source, *, meeting_label, yaxis_title, dot_plot=None, dot_label=None, compare_path=None, compare_label=None
+):
     """The implied-path chart plus the per-meeting implied-rate table, shown
     inline (not collapsed) so the meeting-by-meeting detail is visible, not
-    just the year-end figure."""
+    just the year-end figure. When `compare_path` is given, a prior date's
+    implied path is overlaid and the table gains a repricing column."""
     today = date.today()
     path_dates = [today + pd.Timedelta(days=round(h * 365)) for h in path["horizon_years"]]
     last_date = path_dates[-1]
 
     fig = go.Figure()
+    if compare_path is not None:
+        compare_dates = [today + pd.Timedelta(days=round(h * 365)) for h in compare_path["horizon_years"]]
+        fig.add_trace(
+            go.Scatter(
+                x=compare_dates,
+                y=compare_path["rate"],
+                mode="lines",
+                line=dict(color=CATEGORICAL[3], width=2, dash="dot"),
+                name=compare_label,
+            )
+        )
     fig.add_trace(
         go.Scatter(
             x=path_dates,
@@ -41,7 +64,7 @@ def _render_policy_path(path, anchor_rate, meeting_dates, meeting_source, *, mee
             mode="lines+markers",
             line=dict(color=CATEGORICAL[0], width=3),
             marker=dict(size=8),
-            name="Market-implied path",
+            name="Market-implied path (now)",
         )
     )
     if dot_plot:
@@ -65,17 +88,21 @@ def _render_policy_path(path, anchor_rate, meeting_dates, meeting_source, *, mee
     for meeting in sorted(meeting_dates):
         if meeting < today or meeting > last_date:
             continue
-        rate = implied_rate_at(path, (meeting - today).days / 365.0)
+        horizon = (meeting - today).days / 365.0
+        rate = implied_rate_at(path, horizon)
         if rate is None:
             continue
-        rows.append(
-            {
-                "Meeting": meeting.strftime("%d %b %Y"),
-                "Implied rate (%)": round(rate, 3),
-                "Cumulative vs now (bps)": round((rate - anchor_rate) * 100, 0),
-                "Change since prior meeting (bps)": round((rate - prior_rate) * 100, 0),
-            }
-        )
+        row = {
+            "Meeting": meeting.strftime("%d %b %Y"),
+            "Implied rate (%)": round(rate, 3),
+            "Cumulative vs now (bps)": round((rate - anchor_rate) * 100, 0),
+            "Change since prior meeting (bps)": round((rate - prior_rate) * 100, 0),
+        }
+        if compare_path is not None:
+            was = implied_rate_at(compare_path, horizon)
+            if was is not None:
+                row["Repriced since compare (bps)"] = round((rate - was) * 100, 0)
+        rows.append(row)
         prior_rate = rate
     if rows:
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
@@ -162,6 +189,35 @@ with st.sidebar:
         key=f"{spec.code}_anchor",
         help="Anchors the front of the implied path; defaults to the live value when available.",
     )
+    compare_on = st.checkbox(
+        "Compare to a previous date",
+        key=f"{spec.code}_compare_on",
+        help="Overlay the implied path as it was priced on an earlier date to see how expectations shifted.",
+    )
+    compare_date = None
+    if compare_on:
+        earliest = min(inputs.history) if inputs.history else today - timedelta(days=30)
+        compare_date = st.date_input(
+            "As-of date",
+            value=max(earliest, today - timedelta(days=7)),
+            min_value=earliest,
+            max_value=today,
+            key=f"{spec.code}_compare_date",
+        )
+
+# Build the comparison path from the curve as it stood on (or just before) the
+# chosen date. It's anchored at the current overnight rate for simplicity — the
+# repricing story lives in the curve, and the overnight rate barely moves
+# between meetings.
+compare_path = compare_label = None
+if compare_on and compare_date:
+    if inputs.history:
+        as_of, curve = _curve_as_of(inputs.history, compare_date)
+        if curve:
+            compare_path = implied_forward_path(curve, anchor_rate=anchor)
+            compare_label = f"As priced on {as_of.strftime('%d %b %Y')}"
+    if compare_path is None:
+        st.caption("No stored curve is available on or before that date to compare against.")
 
 if not inputs.yields:
     st.info(
@@ -192,6 +248,14 @@ else:
         yaxis_title=spec.yaxis_title,
         dot_plot=spec.dot_plot,
         dot_label=spec.dot_label,
+        compare_path=compare_path,
+        compare_label=compare_label,
     )
+    if compare_label:
+        st.caption(
+            "Dotted line: the implied path as priced on the selected date, using that day's "
+            "curve anchored at the current overnight rate. The repricing column shows how each "
+            "meeting's implied rate has moved since then."
+        )
 
 _render_sources_panel(spec, inputs.yields, anchor, inputs.status)

@@ -54,23 +54,46 @@ def _fetch_latest_value(dataflow_key: str) -> float | None:
     return float(values.iloc[-1]) if not values.empty else None
 
 
+def _fetch_series_history(dataflow_key: str, n: int = 90) -> dict:
+    """Recent observations of one ECB series as {date: value}, or {} on failure."""
+    url = f"{ECB_DATA_URL}/{dataflow_key}"
+    try:
+        resp = requests.get(url, params={"lastNObservations": str(n), "format": "csvdata"}, timeout=_REQUEST_TIMEOUT)
+        resp.raise_for_status()
+        df = pd.read_csv(io.StringIO(resp.text))
+    except (requests.RequestException, ValueError, pd.errors.ParserError):
+        return {}
+    if "TIME_PERIOD" not in df.columns or "OBS_VALUE" not in df.columns:
+        return {}
+    df["TIME_PERIOD"] = pd.to_datetime(df["TIME_PERIOD"], errors="coerce")
+    df["OBS_VALUE"] = pd.to_numeric(df["OBS_VALUE"], errors="coerce")
+    df = df.dropna(subset=["TIME_PERIOD", "OBS_VALUE"])
+    return {row["TIME_PERIOD"].date(): float(row["OBS_VALUE"]) for _, row in df.iterrows()}
+
+
+def _fetch_curve_history() -> dict:
+    """Recent euro-area curves keyed by date: {date: {maturity: yield}}."""
+    history = {}
+    for maturity_years, key in ECB_YIELD_KEYS.items():
+        for day, value in _fetch_series_history(key).items():
+            history.setdefault(day, {})[maturity_years] = value
+    return history
+
+
 def fetch_ecb_policy_inputs() -> dict:
     """Normalised ECB inputs for the implied-path section.
 
     Returns {"estr", "dfr", "mro": float | None, "yields": {maturity_years:
-    rate}}. Any series the portal doesn't return is None (or omitted from
-    `yields`); an empty `yields` dict means the curve is unavailable and the
-    caller should show an empty state.
+    rate}, "history": {date: curve}}. The latest curve is the most recent dated
+    curve in the history; an empty `yields` means the curve is unavailable.
     """
-    yields = {}
-    for maturity_years, key in ECB_YIELD_KEYS.items():
-        value = _fetch_latest_value(key)
-        if value is not None:
-            yields[maturity_years] = value
+    history = _fetch_curve_history()
+    yields = history[max(history)] if history else {}
 
     return {
         "estr": _fetch_latest_value(ECB_ESTR_KEY),
         "dfr": _fetch_latest_value(ECB_DFR_KEY),
         "mro": _fetch_latest_value(ECB_MRO_KEY),
         "yields": yields,
+        "history": history,
     }

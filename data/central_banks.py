@@ -43,6 +43,7 @@ class PolicyInputs:
     yields: dict[float, float]  # maturity in years -> yield (%); empty = curve unavailable
     metrics: list[tuple[str, str]]  # extra (label, formatted value) metric tiles
     status: list[str]  # per-piece "which source supplied this" diagnostic lines
+    history: dict = field(default_factory=dict)  # {date: {maturity: yield}} for the as-of compare
 
 
 @dataclass(frozen=True)
@@ -71,7 +72,7 @@ def _fed_inputs() -> PolicyInputs:
     if raw["target_range"] is not None:
         lower, upper = raw["target_range"]
         metrics.append(("Target range", f"{lower:.2f}–{upper:.2f}%"))
-    return PolicyInputs(raw["anchor"], raw["yields"], metrics, raw["status"])
+    return PolicyInputs(raw["anchor"], raw["yields"], metrics, raw["status"], raw.get("history", {}))
 
 
 def _ecb_inputs() -> PolicyInputs:
@@ -88,12 +89,12 @@ def _ecb_inputs() -> PolicyInputs:
         if estr is not None
         else ("€STR: unavailable — using deposit rate" if dfr is not None else "€STR: unavailable — using the manual anchor"),
     ]
-    return PolicyInputs(anchor, yields, metrics, status)
+    return PolicyInputs(anchor, yields, metrics, status, raw.get("history", {}))
 
 
 def _boe_inputs() -> PolicyInputs:
     raw = boe.fetch_boe_policy_inputs()
-    return PolicyInputs(raw.get("bank_rate"), raw.get("yields", {}), [], raw["status"])
+    return PolicyInputs(raw.get("bank_rate"), raw.get("yields", {}), [], raw["status"], raw.get("history", {}))
 
 
 def _boj_inputs() -> PolicyInputs:
@@ -101,7 +102,7 @@ def _boj_inputs() -> PolicyInputs:
     # The BoJ has no clean live overnight feed, so the anchor is always the
     # sidebar/fallback value; the page's number_input supplies it.
     status = raw["status"] + ["Policy rate: manual anchor (no live BoJ feed)"]
-    return PolicyInputs(None, raw.get("yields", {}), [], status)
+    return PolicyInputs(None, raw.get("yields", {}), [], status, raw.get("history", {}))
 
 
 CENTRAL_BANKS: list[CentralBankSpec] = [
