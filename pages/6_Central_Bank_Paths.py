@@ -125,18 +125,30 @@ spec = get_spec(bank_label)
 inputs = get_policy_inputs(spec.code)
 scraped_meetings = get_meeting_dates(spec.calendar_code)
 
+today = date.today()
+# Use scraped dates only if they actually contain upcoming meetings — a scrape
+# that returns only past meetings (seen with the ECB calendar) would otherwise
+# leave the table empty instead of falling back to the maintained list.
+scraped_upcoming = [d for d in scraped_meetings if d >= today]
+meetings = scraped_upcoming or spec.meeting_fallback
+meeting_source = (
+    "live from the official calendar"
+    if scraped_upcoming
+    else f"maintained fallback list (verify against {spec.calendar_hint})"
+)
+
 # A failed fetch must not sit in the cache for its full TTL looking permanent
 # (one bad FRED call used to pin "unavailable" for an hour on the deployed
 # app) — clear so the next interaction retries.
 if not inputs.yields:
     get_policy_inputs.clear()
-if not scraped_meetings:
+if not scraped_upcoming:
     get_meeting_dates.clear()
 
 st.caption(
     "Data sources — "
     + " · ".join(inputs.status)
-    + f" · Meetings: {'official calendar' if scraped_meetings else 'fallback list'}"
+    + f" · Meetings: {'official calendar' if scraped_upcoming else 'fallback list'}"
 )
 
 with st.sidebar:
@@ -158,7 +170,6 @@ if not inputs.yields:
         "panel below to see (and tap) the exact source it's trying."
     )
 else:
-    today = date.today()
     path = implied_forward_path(inputs.yields, anchor_rate=anchor)
     year_end_rate = implied_rate_at(path, (date(today.year, 12, 31) - today).days / 365.0)
     metric_row(
@@ -172,17 +183,11 @@ else:
             ),
         ]
     )
-    meetings = scraped_meetings or spec.meeting_fallback
-    source = (
-        "live from the official calendar"
-        if scraped_meetings
-        else f"fallback list in constants.py (verify against {spec.calendar_hint})"
-    )
     _render_policy_path(
         path,
         anchor,
         meetings,
-        source,
+        meeting_source,
         meeting_label=spec.meeting_label,
         yaxis_title=spec.yaxis_title,
         dot_plot=spec.dot_plot,

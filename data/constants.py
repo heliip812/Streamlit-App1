@@ -118,12 +118,11 @@ FOMC_MEETING_DATES_FALLBACK = [
     date(2026, 12, 9),
 ]
 
-# Latest FOMC Summary of Economic Projections (SEP) dot-plot MEDIAN year-end
-# federal funds rate, in percent. Placeholder values — UPDATE from the newest
-# SEP (released quarterly) and change SEP_AS_OF so the overlay is labelled
-# honestly. Shown only as a dated reference against the market-implied path.
-SEP_DOT_PLOT_MEDIAN = {2026: 3.875, 2027: 3.375, 2028: 3.125}
-SEP_AS_OF = "June 2026 SEP (placeholder — update from the latest release)"
+# FOMC Summary of Economic Projections (SEP) dot-plot MEDIAN year-end federal
+# funds rate, in percent. From the 17 Jun 2026 SEP (longer-run median 3.1%).
+# UPDATE from the newest SEP (released quarterly) and change SEP_AS_OF.
+SEP_DOT_PLOT_MEDIAN = {2026: 3.8, 2027: 3.6, 2028: 3.4}
+SEP_AS_OF = "June 2026 SEP"
 
 # --- ECB (European Central Bank) ---------------------------------------------
 # The ECB Data Portal — free, keyless, well-structured; the euro-area
