@@ -33,12 +33,15 @@ included — figures here are derived from actual reported trades, not composite
   (from each source's own history) and shows how each meeting has repriced since. With a free
   **FRED API key**, an **own model** (Taylor-gap rule + momentum, tuned by sidebar sliders) is
   overlaid on the market path, and the model-vs-market **divergence** drives outright /
-  cross-bank spread / FX **signals**. The page is split into three tabs: **Policy paths**
-  (the interactive content), **Data sources** (a consolidated, registry-driven listing of
-  every live source for every bank plus the derivation method), and **Model rationale**
-  (renders `docs/MODEL.md` — why this model design, alternatives considered, limitations).
-  Central banks are registry-driven (`data/central_banks.py`) — adding one is a new fetcher
-  plus a registry entry, no page changes
+  cross-bank spread / FX **signals**. Five tabs: **Policy paths** (the interactive content),
+  **Methodology** (the CB-dashboard brief's three-stage engine — raw instrument quotes →
+  basis-adjusted → per-meeting path deconvolved on EFFECTIVE dates, with a `method` label on
+  every number: Fed ZQ futures, ECB Eurex €STR CSV, BoE OIS forward windowing, curve-forward
+  fallback everywhere), **Daily signals** (snapshot-driven: overnight repricing, divergence
+  z-scores, signal board with flip flags, FX overlay, instrument mapping, refresh button),
+  **Data sources**, and **Model rationale** (renders `docs/MODEL.md`). Central banks are
+  registry-driven (`data/central_banks.py`) — adding one is a new fetcher plus a registry
+  entry, no page changes
 Most DTCC/CFTC pages also carry a **Trading signals** row (trend percentile, curve-shape
 relative value, and flow vs. the window average) and a collapsible trade-level detail table.
 
@@ -65,6 +68,12 @@ docs/MODEL.md              The model's rationale, design choices vs
                            the Model rationale tab (single source of truth)
 signals.py                 Pure model-vs-market divergence -> outright / spread
                            / FX signals; unit-tested
+implied_engine.py          Pure three-stage implied-path engine (raw ->
+                           basis-adjusted -> per-meeting path): Fed monthly-
+                           average deconvolution on effective dates (with the
+                           late-month next-month-proxy fallback), ECB quarterly
+                           equal-step fit, BoE OIS forward windowing, and the
+                           curve-forward fallback; unit-tested
 ui.py                      Shared Streamlit widgets: sidebar date/lookback
                            controls, chart chrome + render, metric rows,
                            empty-state banners — every page uses these
@@ -108,6 +117,19 @@ data/
                            fallback in constants.py
   macro.py                 FRED macro inputs for the own model (via fredapi,
                            needs a free key) — inflation, unemployment, NFCI
+  meetings.py              Decision + EFFECTIVE dates per bank (Fed: next
+                           business day; ECB: following Wednesday; BoE: same
+                           day) — the deconvolution keys on effective dates
+  cb_market.py             Raw quote fetchers: ZQ futures (yfinance), BoE OIS
+                           forward zip, FX spots — network only, no math
+  store.py                 SQLite snapshot store (var/snapshots.db, gitignored)
+                           — paths/signals/fx history, divergence z-scores
+  s3sync.py                Pull-on-start / push-after-refresh persistence for
+                           the store (CB_S3_BUCKET env or [aws].snapshots_bucket)
+  refresh.py               The daily job: fetch -> paths -> model -> signals ->
+                           snapshot -> S3 push. CLI: python -m data.refresh
+                           --fred-key KEY (cron weekdays ~07:30 UK); the app's
+                           "Refresh & snapshot" button runs the same job
   s3_cache.py               Optional persistent cache (see below);
                            every function is a no-op if AWS isn't configured
 ```

@@ -6,7 +6,8 @@ plotly>=5.24
 boto3>=1.34
 openpyxl>=3.1
 fredapi>=0.5
+yfinance>=0.2
 
 # Rebuild marker: bump this line to force Streamlit Cloud to reinstall the
 # environment and start a clean deploy (clears stale-build state without a
-# manual reboot). Last: tabs (paths / data sources / model rationale) + MODEL.md.
+# manual reboot). Last: CB-dashboard brief — engine, methodology + daily-signals tabs, snapshots.

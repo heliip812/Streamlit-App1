@@ -59,6 +59,10 @@ class CentralBankSpec:
     sources: list[tuple[str, str]] = field(default_factory=list)
     dot_plot: dict[int, float] | None = field(default=None)  # year -> projected rate
     dot_label: str | None = field(default=None)
+    # --- Implied-engine config (see implied_engine.py) ---
+    index_label: str = ""  # the overnight index the preferred instrument settles to
+    basis_bp_default: float = 0.0  # index − policy basis (bp), user-editable in the UI
+    instrument_note: str = ""  # preferred market instrument, for the Data sources tab
     # --- Own-model (Taylor-gap) config; see policy_model.py ---
     inflation_target: float = 2.0  # percent
     neutral_nominal: float = 2.5  # nominal neutral policy rate (slider default)
@@ -136,6 +140,9 @@ CENTRAL_BANKS: list[CentralBankSpec] = [
         nairu=4.4,
         currency="USD",
         macro_series={"core_inflation": "PCEPILFE", "unemployment": "UNRATE", "nfci": "NFCI"},
+        index_label="EFFR",
+        basis_bp_default=-4.5,
+        instrument_note="Preferred instrument: CME 30-Day Fed Funds futures (ZQ, delayed via Yahoo) — settles to average EFFR, deconvolved per meeting; curve forwards as fallback",
     ),
     CentralBankSpec(
         code="ecb",
@@ -160,6 +167,9 @@ CENTRAL_BANKS: list[CentralBankSpec] = [
         nairu=6.5,
         currency="EUR",
         macro_series={"core_inflation": "CP0000EZ19M086NEST", "unemployment": "LRHUTTTTEZM156S"},
+        index_label="€STR",
+        basis_bp_default=-8.0,
+        instrument_note="Preferred instrument: Eurex 3M €STR futures settlements (free CSV, uploaded) — quarterly equal-step fit; curve forwards as fallback",
     ),
     CentralBankSpec(
         code="boe",
@@ -181,6 +191,9 @@ CENTRAL_BANKS: list[CentralBankSpec] = [
         nairu=4.3,
         currency="GBP",
         macro_series={"core_inflation": "GBRCPIALLMINMEI", "unemployment": "LRHUTTTTGBM156S"},
+        index_label="SONIA",
+        basis_bp_default=-4.0,
+        instrument_note="Preferred instrument: BoE daily OIS instantaneous-forward curve (auto-downloaded zip) — windowed between effective dates",
     ),
     CentralBankSpec(
         code="boj",
@@ -202,6 +215,9 @@ CENTRAL_BANKS: list[CentralBankSpec] = [
         nairu=2.5,
         currency="JPY",
         macro_series={"core_inflation": "JPNCPIALLMINMEI", "unemployment": "LRHUTTTTJPM156S"},
+        index_label="TONA",
+        basis_bp_default=0.0,
+        instrument_note="No free futures/OIS feed — JGB curve forwards only (not covered by the engine brief)",
     ),
 ]
 

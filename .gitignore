@@ -23,3 +23,6 @@ env/
 # Testing
 .pytest_cache/
 .coverage
+
+# Runtime data (snapshot store — synced to S3, never committed)
+var/

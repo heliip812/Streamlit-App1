@@ -111,6 +111,11 @@ FOMC_MEETING_DATES_FALLBACK = [
     date(2026, 9, 16),
     date(2026, 10, 28),
     date(2026, 12, 9),
+    # 2027 — tentative schedule; verify when the official calendar publishes.
+    date(2027, 1, 27),
+    date(2027, 3, 17),
+    date(2027, 4, 28),
+    date(2027, 6, 16),
 ]
 
 # FOMC Summary of Economic Projections (SEP) dot-plot MEDIAN year-end federal
@@ -156,6 +161,8 @@ ECB_MEETING_DATES_FALLBACK = [
     date(2026, 9, 10),
     date(2026, 10, 29),
     date(2026, 12, 17),
+    date(2027, 2, 4),  # tentative
+    date(2027, 3, 18),  # tentative
 ]
 
 # --- Bank of England ---------------------------------------------------------
@@ -171,15 +178,17 @@ BOE_YIELD_CURVE_ZIP_URL = (
 BOE_IADB_URL = "https://www.bankofengland.co.uk/boeapps/database/fromshowcolumns.asp"
 BOE_BANK_RATE_CODE = "IUDBEDR"
 BOE_CALENDAR_URL = "https://www.bankofengland.co.uk/monetary-policy/upcoming-mpc-dates"
-BOE_MEETING_DATES_FALLBACK = [  # 2026 MPC decision dates — VERIFY at bankofengland.co.uk
+BOE_MEETING_DATES_FALLBACK = [  # MPC decision dates — VERIFY at bankofengland.co.uk
     date(2026, 2, 5),
     date(2026, 3, 19),
     date(2026, 5, 7),
     date(2026, 6, 18),
-    date(2026, 8, 6),
+    date(2026, 7, 30),  # per the CB-dashboard brief's verified calendar (was 6 Aug)
     date(2026, 9, 17),
     date(2026, 11, 5),
     date(2026, 12, 17),
+    date(2027, 2, 4),  # tentative
+    date(2027, 3, 18),  # tentative
 ]
 
 # --- Bank of Japan -----------------------------------------------------------
@@ -202,4 +211,6 @@ BOJ_MEETING_DATES_FALLBACK = [  # 2026 MPM decision dates — VERIFY at boj.or.j
     date(2026, 9, 18),
     date(2026, 10, 29),
     date(2026, 12, 18),
+    date(2027, 1, 22),  # tentative
+    date(2027, 3, 19),  # tentative
 ]

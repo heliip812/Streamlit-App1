@@ -15,7 +15,7 @@ import streamlit as st
 
 from config import CACHE_TTL_SECONDS
 
-from . import cb_calendar, central_banks, cftc, dtcc, macro, s3_cache
+from . import cb_calendar, cb_market, central_banks, cftc, dtcc, macro, s3_cache
 from .constants import DTCC_ASSET_CLASSES
 
 
@@ -59,6 +59,19 @@ def get_meeting_dates(calendar_code: str) -> list:
 @st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=8, show_spinner="Fetching FRED macro data...")
 def get_macro(bank_code: str, fred_key: str) -> dict:
     return macro.fetch_macro(central_banks.get_spec(bank_code).macro_series, fred_key)
+
+
+# Raw quotes for the Methodology tab's implied engine. Fetched only when the
+# user asks (they're slow — 14 Yahoo tickers), and cached briefly so a rerun
+# doesn't refetch. The daily refresh job bypasses these (no Streamlit there).
+@st.cache_data(ttl=900, max_entries=1, show_spinner="Fetching Fed Funds futures (Yahoo, ~15s)...")
+def get_zq_futures(n_months: int = 14) -> pd.DataFrame:
+    return cb_market.fetch_ff_futures_raw(n_months)
+
+
+@st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=1, show_spinner="Fetching BoE OIS forward curve...")
+def get_boe_forward_curve() -> pd.DataFrame:
+    return cb_market.fetch_boe_ois_forward_raw()
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=1, show_spinner="Fetching cross-asset overview...")
