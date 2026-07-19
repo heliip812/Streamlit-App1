@@ -73,6 +73,6 @@ def test_boj_adapter_has_no_live_anchor():
     with patch("data.central_banks.boj.fetch_boj_policy_inputs", return_value=raw):
         inputs = central_banks.fetch_inputs("boj")
 
-    assert inputs.anchor_rate is None  # page supplies the anchor from the sidebar/fallback
+    assert inputs.anchor_rate is None  # page anchors at the shortest real yield
     assert inputs.yields == {1.0: 0.55, 2.0: 0.70}
-    assert any("manual anchor" in line for line in inputs.status)
+    assert any("shortest JGB yield" in line for line in inputs.status)

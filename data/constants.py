@@ -97,11 +97,6 @@ TREASURY_YIELD_CSV_URL = (
     "?type=daily_treasury_yield_curve&field_tdr_date_value={year}&page&_format=csv"
 )
 
-# --- Editable Fed assumptions -------------------------------------------------
-# Fallback anchor if both FRED's and NY Fed's EFFR are momentarily unavailable;
-# the live value is preferred and the Rates sidebar lets the viewer override it.
-CURRENT_EFFR_DEFAULT = 4.33
-
 # FOMC decision dates are fetched from the Fed's public calendar page at
 # runtime (see data/cb_calendar.py); this list is the FALLBACK used when that
 # best-effort scrape fails. VERIFY against
@@ -148,9 +143,6 @@ ECB_YIELD_KEYS = {
     2.0: "YC/B.U2.EUR.4F.G_N_A.SV_C_YM.SR_2Y",
 }
 
-# Fallback euro overnight rate (€STR, %) if the live series is unavailable.
-CURRENT_ESTR_DEFAULT = 1.90
-
 # ECB Governing Council monetary-policy meeting dates are scraped best-effort
 # from the ECB calendar page (data/cb_calendar.py); this is the FALLBACK.
 # VERIFY against ecb.europa.eu and keep roughly current.
@@ -178,7 +170,6 @@ BOE_YIELD_CURVE_ZIP_URL = (
 )
 BOE_IADB_URL = "https://www.bankofengland.co.uk/boeapps/database/fromshowcolumns.asp"
 BOE_BANK_RATE_CODE = "IUDBEDR"
-CURRENT_BANK_RATE_DEFAULT = 3.75  # fallback Bank Rate (%) if IADB is unavailable
 BOE_CALENDAR_URL = "https://www.bankofengland.co.uk/monetary-policy/upcoming-mpc-dates"
 BOE_MEETING_DATES_FALLBACK = [  # 2026 MPC decision dates — VERIFY at bankofengland.co.uk
     date(2026, 2, 5),
@@ -192,16 +183,15 @@ BOE_MEETING_DATES_FALLBACK = [  # 2026 MPC decision dates — VERIFY at bankofen
 ]
 
 # --- Bank of Japan -----------------------------------------------------------
-# Japan's Ministry of Finance publishes daily JGB yields as a keyless CSV.
-# The BoJ has no clean live policy-rate feed, so the anchor defaults to the
-# constant below (overridable in the sidebar). Column headers are BEST-EFFORT.
+# Japan's Ministry of Finance publishes daily JGB yields as a keyless CSV. The
+# BoJ has no clean live overnight-rate feed, so the path is anchored at the
+# shortest real JGB yield (see the page) rather than any hardcoded rate.
 # Confirmed via the MOF site: the all-history file lives under /historical/ and
 # carries one metadata row before the header (parsed with header=1). Columns are
 # "1Y","2Y",...,"40Y"; the first column is the date (we take the latest row).
 BOJ_JGB_CSV_URL = "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/historical/jgbcme_all.csv"
 BOJ_JGB_HEADER_ROW = 1  # rows to skip before the real header
 BOJ_YIELD_COLUMNS = {1.0: ("1Y", "1", "1 Year"), 2.0: ("2Y", "2", "2 Year")}
-CURRENT_BOJ_RATE_DEFAULT = 0.50  # fallback BoJ policy rate (%)
 BOJ_CALENDAR_URL = "https://www.boj.or.jp/en/mopo/mpmsche_minu/index.htm"
 BOJ_MEETING_DATES_FALLBACK = [  # 2026 MPM decision dates — VERIFY at boj.or.jp
     date(2026, 1, 23),

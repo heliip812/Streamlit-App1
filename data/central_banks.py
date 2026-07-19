@@ -26,10 +26,6 @@ from . import boe, boj, ecb, us_rates
 from .constants import (
     BOE_MEETING_DATES_FALLBACK,
     BOJ_MEETING_DATES_FALLBACK,
-    CURRENT_BANK_RATE_DEFAULT,
-    CURRENT_BOJ_RATE_DEFAULT,
-    CURRENT_EFFR_DEFAULT,
-    CURRENT_ESTR_DEFAULT,
     ECB_MEETING_DATES_FALLBACK,
     FOMC_MEETING_DATES_FALLBACK,
     SEP_AS_OF,
@@ -52,7 +48,6 @@ class CentralBankSpec:
     label: str  # radio-button label
     anchor_label: str  # sidebar override input label
     anchor_metric_label: str  # metric-tile label for the anchor
-    anchor_fallback: float  # last-resort anchor if every live source fails
     fetch: Callable[[], PolicyInputs]
     calendar_code: str  # key into cb_calendar.FETCHERS
     calendar_hint: str  # where to verify the fallback meeting list
@@ -87,7 +82,7 @@ def _ecb_inputs() -> PolicyInputs:
         "Curve: ECB Data Portal" if yields else "Curve: unavailable (ECB Data Portal failed)",
         "€STR: ECB Data Portal"
         if estr is not None
-        else ("€STR: unavailable — using deposit rate" if dfr is not None else "€STR: unavailable — using the manual anchor"),
+        else ("€STR: unavailable — using deposit rate" if dfr is not None else "€STR: unavailable — anchored at the shortest yield"),
     ]
     return PolicyInputs(anchor, yields, metrics, status, raw.get("history", {}))
 
@@ -99,9 +94,10 @@ def _boe_inputs() -> PolicyInputs:
 
 def _boj_inputs() -> PolicyInputs:
     raw = boj.fetch_boj_policy_inputs()
-    # The BoJ has no clean live overnight feed, so the anchor is always the
-    # sidebar/fallback value; the page's number_input supplies it.
-    status = raw["status"] + ["Policy rate: manual anchor (no live BoJ feed)"]
+    # The BoJ has no clean live overnight feed, so anchor_rate is None and the
+    # page anchors the path at the shortest real JGB yield instead of a
+    # hardcoded rate.
+    status = raw["status"] + ["Overnight rate: no live BoJ feed — anchored at the shortest JGB yield"]
     return PolicyInputs(None, raw.get("yields", {}), [], status, raw.get("history", {}))
 
 
@@ -111,7 +107,6 @@ CENTRAL_BANKS: list[CentralBankSpec] = [
         label="Federal Reserve",
         anchor_label="Current effective fed funds rate (EFFR), %",
         anchor_metric_label="Current EFFR",
-        anchor_fallback=CURRENT_EFFR_DEFAULT,
         fetch=_fed_inputs,
         calendar_code="fomc",
         calendar_hint="federalreserve.gov",
@@ -134,7 +129,6 @@ CENTRAL_BANKS: list[CentralBankSpec] = [
         label="ECB",
         anchor_label="Current €STR (euro overnight rate), %",
         anchor_metric_label="€STR (overnight)",
-        anchor_fallback=CURRENT_ESTR_DEFAULT,
         fetch=_ecb_inputs,
         calendar_code="ecb",
         calendar_hint="ecb.europa.eu",
@@ -154,7 +148,6 @@ CENTRAL_BANKS: list[CentralBankSpec] = [
         label="Bank of England",
         anchor_label="Current UK Bank Rate, %",
         anchor_metric_label="Bank Rate",
-        anchor_fallback=CURRENT_BANK_RATE_DEFAULT,
         fetch=_boe_inputs,
         calendar_code="boe",  # no scraper yet -> fallback list is used
         calendar_hint="bankofengland.co.uk",
@@ -171,7 +164,6 @@ CENTRAL_BANKS: list[CentralBankSpec] = [
         label="Bank of Japan",
         anchor_label="Current BoJ policy rate, %",
         anchor_metric_label="Policy rate",
-        anchor_fallback=CURRENT_BOJ_RATE_DEFAULT,
         fetch=_boj_inputs,
         calendar_code="boj",  # no scraper yet -> fallback list is used
         calendar_hint="boj.or.jp",

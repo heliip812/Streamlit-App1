@@ -178,16 +178,31 @@ st.caption(
     + f" · Meetings: {'official calendar' if scraped_upcoming else 'fallback list'}"
 )
 
+# Anchor the path at real data only: the live overnight rate when a feed
+# provides it, otherwise the shortest real curve yield (e.g. BoJ, which has no
+# free overnight feed). No hardcoded rate is ever used.
+if inputs.anchor_rate is not None:
+    anchor_default = inputs.anchor_rate
+    anchor_metric_label = spec.anchor_metric_label
+elif inputs.yields:
+    shortest = min(inputs.yields)
+    anchor_default = inputs.yields[shortest]
+    anchor_metric_label = f"Front rate ({_maturity_label(shortest)} yield)"
+else:
+    anchor_default = 0.0
+    anchor_metric_label = spec.anchor_metric_label
+
 with st.sidebar:
     anchor = st.number_input(
         spec.anchor_label,
         min_value=-1.0,
         max_value=10.0,
-        value=float(inputs.anchor_rate if inputs.anchor_rate is not None else spec.anchor_fallback),
+        value=float(anchor_default),
         step=0.01,
         format="%.2f",
         key=f"{spec.code}_anchor",
-        help="Anchors the front of the implied path; defaults to the live value when available.",
+        help="Anchors the front of the implied path. Defaults to the live overnight rate, "
+        "or the shortest real curve yield when no overnight feed exists; override if needed.",
     )
     compare_on = st.checkbox(
         "Compare to a previous date",
@@ -230,7 +245,7 @@ else:
     year_end_rate = implied_rate_at(path, (date(today.year, 12, 31) - today).days / 365.0)
     metric_row(
         [
-            (spec.anchor_metric_label, f"{anchor:.2f}%"),
+            (anchor_metric_label, f"{anchor:.2f}%"),
             *inputs.metrics,
             (
                 f"Implied by end-{today.year}",
