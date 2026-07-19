@@ -15,7 +15,7 @@ import streamlit as st
 
 from config import CACHE_TTL_SECONDS
 
-from . import cb_calendar, central_banks, cftc, dtcc, s3_cache
+from . import cb_calendar, central_banks, cftc, dtcc, macro, s3_cache
 from .constants import DTCC_ASSET_CLASSES
 
 
@@ -51,6 +51,14 @@ def get_policy_inputs(bank_code: str) -> central_banks.PolicyInputs:
 def get_meeting_dates(calendar_code: str) -> list:
     fetcher = cb_calendar.FETCHERS.get(calendar_code)
     return fetcher() if fetcher else []
+
+
+# Macro readings for the own-model, keyed by (bank, key). The key is part of
+# the cache key so switching FRED keys re-fetches; a failed pull isn't cached
+# long enough to matter (macro updates monthly anyway).
+@st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=8, show_spinner="Fetching FRED macro data...")
+def get_macro(bank_code: str, fred_key: str) -> dict:
+    return macro.fetch_macro(central_banks.get_spec(bank_code).macro_series, fred_key)
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=1, show_spinner="Fetching cross-asset overview...")

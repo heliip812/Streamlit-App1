@@ -30,3 +30,23 @@ EQUITIES_COMMODITIES_LOOKBACK = RangeConfig(min_value=3, max_value=21, default=3
 CFTC_WEEKS_LOOKBACK = RangeConfig(min_value=8, max_value=104, default=26)
 
 CACHE_TTL_SECONDS = 3600
+
+# --- Policy-model & signals tunables -----------------------------------------
+# One standard policy move, in basis points; used to scale gaps into
+# hike/hold/cut probabilities and to discretise the model's path.
+STEP_BP = 25.0
+
+# Divergence (model − market, bp) thresholds for the trading signals.
+SIGNAL_THRESHOLD_BP = 10.0  # ignore divergences smaller than this
+SIGNAL_STRONG_BP = 25.0  # one full step of mispricing → high conviction
+
+# FX pair label for each unordered pair of central banks (by code). Used to
+# name the FX leg of a cross-bank signal.
+FX_PAIRS = {
+    frozenset({"fed", "ecb"}): "EUR/USD",
+    frozenset({"fed", "boe"}): "GBP/USD",
+    frozenset({"fed", "boj"}): "USD/JPY",
+    frozenset({"ecb", "boe"}): "EUR/GBP",
+    frozenset({"ecb", "boj"}): "EUR/JPY",
+    frozenset({"boe", "boj"}): "GBP/JPY",
+}

@@ -59,6 +59,14 @@ class CentralBankSpec:
     sources: list[tuple[str, str]] = field(default_factory=list)
     dot_plot: dict[int, float] | None = field(default=None)  # year -> projected rate
     dot_label: str | None = field(default=None)
+    # --- Own-model (Taylor-gap) config; see policy_model.py ---
+    inflation_target: float = 2.0  # percent
+    neutral_nominal: float = 2.5  # nominal neutral policy rate (slider default)
+    nairu: float = 4.5  # natural rate of unemployment estimate (percent)
+    currency: str = ""  # ISO code, for FX signals
+    # FRED series ids for the macro model. US codes are solid; EA/UK/JP are
+    # best-effort (headline CPI / OECD unemployment) and flagged in the UI.
+    macro_series: dict = field(default_factory=dict)
 
 
 def _fed_inputs() -> PolicyInputs:
@@ -123,6 +131,11 @@ CENTRAL_BANKS: list[CentralBankSpec] = [
         ],
         dot_plot=SEP_DOT_PLOT_MEDIAN,
         dot_label=f"Dot plot median — {SEP_AS_OF}",
+        inflation_target=2.0,
+        neutral_nominal=3.0,
+        nairu=4.4,
+        currency="USD",
+        macro_series={"core_inflation": "PCEPILFE", "unemployment": "UNRATE", "nfci": "NFCI"},
     ),
     CentralBankSpec(
         code="ecb",
@@ -142,6 +155,11 @@ CENTRAL_BANKS: list[CentralBankSpec] = [
                 "https://www.ecb.europa.eu/stats/financial_markets_and_interest_rates/euro_short-term_rate/html/index.en.html",
             ),
         ],
+        inflation_target=2.0,
+        neutral_nominal=2.0,
+        nairu=6.5,
+        currency="EUR",
+        macro_series={"core_inflation": "CP0000EZ19M086NEST", "unemployment": "LRHUTTTTEZM156S"},
     ),
     CentralBankSpec(
         code="boe",
@@ -158,6 +176,11 @@ CENTRAL_BANKS: list[CentralBankSpec] = [
             ("Curve — Bank of England sterling OIS yield curve (Excel)", "https://www.bankofengland.co.uk/statistics/yield-curves"),
             ("Bank Rate — BoE Interactive Database (IADB)", "https://www.bankofengland.co.uk/boeapps/database/"),
         ],
+        inflation_target=2.0,
+        neutral_nominal=3.0,
+        nairu=4.3,
+        currency="GBP",
+        macro_series={"core_inflation": "GBRCPIALLMINMEI", "unemployment": "LRHUTTTTGBM156S"},
     ),
     CentralBankSpec(
         code="boj",
@@ -174,6 +197,11 @@ CENTRAL_BANKS: list[CentralBankSpec] = [
             ("Curve — Japan MOF, JGB interest rates (daily CSV)", "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/index.htm"),
             ("Policy rate — Bank of Japan", "https://www.boj.or.jp/en/statistics/boj/other/mci/index.htm"),
         ],
+        inflation_target=2.0,
+        neutral_nominal=1.0,
+        nairu=2.5,
+        currency="JPY",
+        macro_series={"core_inflation": "JPNCPIALLMINMEI", "unemployment": "LRHUTTTTJPM156S"},
     ),
 ]
 

@@ -30,9 +30,11 @@ included — figures here are derived from actual reported trades, not composite
   England (sterling OIS curve) and the Bank of Japan (Japan MOF JGB curve), with the implied
   rate at each upcoming meeting, a per-source status line, and a "show your work" validation
   panel. An optional **as-of compare** overlays the path as it was priced on an earlier date
-  (from each source's own history) and shows how each meeting has repriced since. Central
-  banks are registry-driven (`data/central_banks.py`) — adding one is a new fetcher plus a
-  registry entry, no page changes
+  (from each source's own history) and shows how each meeting has repriced since. With a free
+  **FRED API key**, an **own model** (Taylor-gap rule + momentum, tuned by sidebar sliders) is
+  overlaid on the market path, and the model-vs-market **divergence** drives outright /
+  cross-bank spread / FX **signals**. Central banks are registry-driven
+  (`data/central_banks.py`) — adding one is a new fetcher plus a registry entry, no page changes
 Most DTCC/CFTC pages also carry a **Trading signals** row (trend percentile, curve-shape
 relative value, and flow vs. the window average) and a collapsible trade-level detail table.
 
@@ -52,6 +54,10 @@ fed_path.py                Pure market-implied path math (short-end yields ->
                            implied forward rate path + interpolation), no
                            Streamlit/network so it's fully unit-tested; drives
                            the Central Bank Paths page
+policy_model.py            Pure 'own model' — Taylor-gap + momentum -> hike/
+                           hold/cut probabilities -> model path; unit-tested
+signals.py                 Pure model-vs-market divergence -> outright / spread
+                           / FX signals; unit-tested
 ui.py                      Shared Streamlit widgets: sidebar date/lookback
                            controls, chart chrome + render, metric rows,
                            empty-state banners — every page uses these
@@ -93,6 +99,8 @@ data/
   cb_calendar.py           Best-effort scrape of central-bank meeting calendars
                            (FETCHERS dispatch), validated, with a maintained
                            fallback in constants.py
+  macro.py                 FRED macro inputs for the own model (via fredapi,
+                           needs a free key) — inflation, unemployment, NFCI
   s3_cache.py               Optional persistent cache (see below);
                            every function is a no-op if AWS isn't configured
 ```

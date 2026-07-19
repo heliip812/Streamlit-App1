@@ -5,8 +5,10 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from data.central_banks import CENTRAL_BANKS, get_spec
-from data.sources import get_meeting_dates, get_policy_inputs
+from data.sources import get_macro, get_meeting_dates, get_policy_inputs
 from fed_path import implied_forward_path, implied_rate_at
+from policy_model import model_path
+from signals import build_signal_table, merge_paths, outright_signal
 from ui import metric_row, render
 from viz_theme import CATEGORICAL
 
@@ -14,10 +16,11 @@ st.set_page_config(page_title="Central Bank Paths — Derivatives Monitor", page
 st.title("Central bank policy paths (market-implied)")
 st.caption(
     "Where the market expects each central bank's policy rate to go, implied by its short-end "
-    "government (or OIS) curve — free, keyless sources with independent fallbacks. A "
-    "curve-implied proxy: small term premium and safe-haven collateral richness make it read "
-    "marginally more dovish than a pure OIS/futures measure — good for direction and rough "
-    "magnitude, not a live policy-expectations curve."
+    "government (or OIS) curve — free, keyless sources with independent fallbacks. Add a free "
+    "FRED API key in the sidebar to overlay an **own model** (a Taylor-gap rule you tune with "
+    "sliders) and turn the model-vs-market divergence into outright, cross-bank spread, and FX "
+    "signals. A curve-implied proxy, not a live policy-expectations curve; the model is a "
+    "research scaffold, not a forecast."
 )
 
 
@@ -34,18 +37,77 @@ def _curve_as_of(history, target_date):
     return day, history[day]
 
 
+def _derive_anchor(inputs):
+    """The overnight anchor from real data: live rate, else shortest curve yield."""
+    if inputs.anchor_rate is not None:
+        return inputs.anchor_rate
+    if inputs.yields:
+        return inputs.yields[min(inputs.yields)]
+    return None
+
+
+def _market_at_meetings(path, meetings, today):
+    """Market-implied rate interpolated at each upcoming meeting within the curve."""
+    if path.empty:
+        return pd.DataFrame(columns=["meeting", "implied_rate"])
+    last = today + timedelta(days=round(float(path["horizon_years"].max()) * 365))
+    rows = []
+    for meeting in sorted(meetings):
+        if meeting < today or meeting > last:
+            continue
+        rate = implied_rate_at(path, (meeting - today).days / 365.0)
+        if rate is not None:
+            rows.append({"meeting": meeting, "implied_rate": rate})
+    return pd.DataFrame(rows)
+
+
+def _bank_divergence(spec, fred_key, a, b, inertia, today):
+    """Mean model−market divergence (bp) over the next 3 meetings, or NaN."""
+    inputs = get_policy_inputs(spec.code)
+    anchor = _derive_anchor(inputs)
+    if not inputs.yields or anchor is None:
+        return float("nan")
+    path = implied_forward_path(inputs.yields, anchor_rate=anchor)
+    scraped = [d for d in get_meeting_dates(spec.calendar_code) if d >= today]
+    meetings = scraped or spec.meeting_fallback
+    market = _market_at_meetings(path, meetings, today)
+    if market.empty:
+        return float("nan")
+    macro = get_macro(spec.code, fred_key)
+    model = model_path(
+        list(market["meeting"]), current_rate=anchor, macro=macro,
+        inflation_target=spec.inflation_target, neutral=spec.neutral_nominal, a=a, b=b, inertia=inertia,
+    )
+    merged = merge_paths(market, model)
+    return float(merged.head(3)["divergence_bp"].mean()) if not merged.empty else float("nan")
+
+
 def _render_policy_path(
-    path, anchor_rate, meeting_dates, meeting_source, *, meeting_label, yaxis_title, dot_plot=None, dot_label=None, compare_path=None, compare_label=None
+    path, anchor_rate, meeting_dates, meeting_source, *, meeting_label, yaxis_title, dot_plot=None, dot_label=None, compare_path=None, compare_label=None, model_df=None
 ):
     """The implied-path chart plus the per-meeting implied-rate table, shown
     inline (not collapsed) so the meeting-by-meeting detail is visible, not
     just the year-end figure. When `compare_path` is given, a prior date's
-    implied path is overlaid and the table gains a repricing column."""
+    implied path is overlaid and the table gains a repricing column. When
+    `model_df` is given, the own-model path is overlaid (dashed) and the table
+    gains model-rate and divergence columns."""
     today = date.today()
     path_dates = [today + pd.Timedelta(days=round(h * 365)) for h in path["horizon_years"]]
     last_date = path_dates[-1]
+    model_lookup = dict(zip(model_df["meeting"], model_df["model_rate"])) if model_df is not None and not model_df.empty else {}
 
     fig = go.Figure()
+    if model_lookup:
+        fig.add_trace(
+            go.Scatter(
+                x=list(model_lookup),
+                y=list(model_lookup.values()),
+                mode="lines+markers",
+                line=dict(color=CATEGORICAL[2], width=2, dash="dash"),
+                marker=dict(size=7),
+                name="Own model",
+            )
+        )
     if compare_path is not None:
         compare_dates = [today + pd.Timedelta(days=round(h * 365)) for h in compare_path["horizon_years"]]
         fig.add_trace(
@@ -102,6 +164,9 @@ def _render_policy_path(
             was = implied_rate_at(compare_path, horizon)
             if was is not None:
                 row["Repriced since compare (bps)"] = round((rate - was) * 100, 0)
+        if meeting in model_lookup:
+            row["Model rate (%)"] = round(model_lookup[meeting], 3)
+            row["Divergence (bps)"] = round((model_lookup[meeting] - rate) * 100, 0)
         rows.append(row)
         prior_rate = rate
     if rows:
@@ -220,6 +285,19 @@ with st.sidebar:
             key=f"{spec.code}_compare_date",
         )
 
+    st.divider()
+    st.markdown("**Own model (optional)**")
+    fred_key = st.text_input(
+        "FRED API key",
+        type="password",
+        key="fred_key",
+        help="Free at fred.stlouisfed.org (Account → API Keys). Activates the Taylor-gap "
+        "model overlay and the cross-market signals. Market paths work without it.",
+    )
+    model_a = st.slider("Inflation-gap weight (a)", 0.0, 1.5, 0.5, 0.05, key="model_a")
+    model_b = st.slider("Employment-gap weight (b)", 0.0, 1.5, 0.5, 0.05, key="model_b")
+    model_inertia = st.slider("Policy inertia (gap closed per meeting)", 0.05, 0.6, 0.25, 0.05, key="model_inertia")
+
 # Build the comparison path from the curve as it stood on (or just before) the
 # chosen date. It's anchored at the current overnight rate for simplicity — the
 # repricing story lives in the curve, and the overnight rate barely moves
@@ -254,6 +332,18 @@ else:
             ),
         ]
     )
+    # Own-model overlay (Taylor-gap + momentum) when a FRED key is provided.
+    market_df = _market_at_meetings(path, meetings, today)
+    model_df = merged = None
+    if fred_key and not market_df.empty:
+        macro = get_macro(spec.code, fred_key)
+        model_df = model_path(
+            list(market_df["meeting"]), current_rate=anchor, macro=macro,
+            inflation_target=spec.inflation_target, neutral=spec.neutral_nominal,
+            a=model_a, b=model_b, inertia=model_inertia,
+        )
+        merged = merge_paths(market_df, model_df)
+
     _render_policy_path(
         path,
         anchor,
@@ -265,6 +355,7 @@ else:
         dot_label=spec.dot_label,
         compare_path=compare_path,
         compare_label=compare_label,
+        model_df=model_df,
     )
     if compare_label:
         st.caption(
@@ -272,5 +363,35 @@ else:
             "curve anchored at the current overnight rate. The repricing column shows how each "
             "meeting's implied rate has moved since then."
         )
+    if merged is not None and not merged.empty:
+        sig = outright_signal(merged)
+        badge = {0: "⚪", 1: "🟡", 2: "🔴"}[sig["conviction"]]
+        st.markdown(f"#### {badge} Outright signal — {sig['signal']}")
+        st.caption(
+            f"Own model vs market: {sig['divergence_bp']:+.0f} bp average divergence over the next 3 "
+            f"meetings (model r* = {model_df['r_star'].iloc[0]:.2f}%). Dashed green line is the model path."
+        )
 
 _render_sources_panel(spec, inputs.yields, anchor, inputs.status)
+
+# --- Cross-market signals (needs the model, i.e. a FRED key, for 2+ banks) ---
+if fred_key:
+    st.divider()
+    st.subheader("Cross-market signals — model vs market")
+    divergences = {s.code: _bank_divergence(s, fred_key, model_a, model_b, model_inertia, today) for s in CENTRAL_BANKS}
+    valid = {k: v for k, v in divergences.items() if not pd.isna(v)}
+    if len(valid) >= 2:
+        table = build_signal_table(valid)
+        table["conviction"] = table["conviction"].map({0: "—", 1: "Medium", 2: "High"})
+        st.dataframe(
+            table.rename(columns={"type": "Type", "pair": "Pair", "signal": "Signal", "rel_divergence_bp": "Rel. divergence (bp)", "conviction": "Conviction"}),
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.info("Need at least two banks with both a live curve and macro data for cross-market signals.")
+    st.caption(
+        "Signals are model-minus-market divergences — a research scaffold, not investment advice. "
+        "Euro-area/UK/Japan macro series are best-effort (headline CPI / OECD unemployment); verify "
+        "before relying on their signals. Validate everything against primary sources."
+    )
