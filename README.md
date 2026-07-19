@@ -33,8 +33,12 @@ included — figures here are derived from actual reported trades, not composite
   (from each source's own history) and shows how each meeting has repriced since. With a free
   **FRED API key**, an **own model** (Taylor-gap rule + momentum, tuned by sidebar sliders) is
   overlaid on the market path, and the model-vs-market **divergence** drives outright /
-  cross-bank spread / FX **signals**. Central banks are registry-driven
-  (`data/central_banks.py`) — adding one is a new fetcher plus a registry entry, no page changes
+  cross-bank spread / FX **signals**. The page is split into three tabs: **Policy paths**
+  (the interactive content), **Data sources** (a consolidated, registry-driven listing of
+  every live source for every bank plus the derivation method), and **Model rationale**
+  (renders `docs/MODEL.md` — why this model design, alternatives considered, limitations).
+  Central banks are registry-driven (`data/central_banks.py`) — adding one is a new fetcher
+  plus a registry entry, no page changes
 Most DTCC/CFTC pages also carry a **Trading signals** row (trend percentile, curve-shape
 relative value, and flow vs. the window average) and a collapsible trade-level detail table.
 
@@ -56,6 +60,9 @@ fed_path.py                Pure market-implied path math (short-end yields ->
                            the Central Bank Paths page
 policy_model.py            Pure 'own model' — Taylor-gap + momentum -> hike/
                            hold/cut probabilities -> model path; unit-tested
+docs/MODEL.md              The model's rationale, design choices vs
+                           alternatives, and limitations — rendered in-app on
+                           the Model rationale tab (single source of truth)
 signals.py                 Pure model-vs-market divergence -> outright / spread
                            / FX signals; unit-tested
 ui.py                      Shared Streamlit widgets: sidebar date/lookback

@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from pathlib import Path
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -19,9 +20,11 @@ st.caption(
     "government (or OIS) curve — free, keyless sources with independent fallbacks. Add a free "
     "FRED API key in the sidebar to overlay an **own model** (a Taylor-gap rule you tune with "
     "sliders) and turn the model-vs-market divergence into outright, cross-bank spread, and FX "
-    "signals. A curve-implied proxy, not a live policy-expectations curve; the model is a "
-    "research scaffold, not a forecast."
+    "signals. See the Data sources and Model rationale tabs for exactly where every number "
+    "comes from and why the model is built the way it is."
 )
+
+_MODEL_DOC = Path(__file__).resolve().parent.parent / "docs" / "MODEL.md"
 
 
 def _maturity_label(years: float) -> str:
@@ -176,222 +179,269 @@ def _render_policy_path(
     st.caption(f"Meeting dates: {meeting_source}.")
 
 
-def _render_sources_panel(spec, raw_yields, anchor_rate, status):
-    """A collapsible 'show your work' panel for validation: the exact raw
-    sources (tap to check them), the actual yields fetched, and the formula
-    that turns them into the implied path. Shown for every bank — including
-    ones with no data, so an empty curve is diagnosable from the source link."""
-    with st.expander("Data source & how it's derived (for validation)"):
+def _render_validation_expander(raw_yields, anchor_rate, status):
+    """Per-bank live validation: which feeds resolved and the exact raw curve
+    the calculation used. Source links and the method live on the Data
+    sources tab, so this stays focused on today's actual inputs."""
+    with st.expander("Raw inputs fetched (validation)"):
         st.markdown("**Live status:** " + " · ".join(status))
-
-        st.markdown("**Raw sources** (tap to verify the numbers against the origin):")
-        for label, url in spec.sources:
-            st.markdown(f"- [{label}]({url})")
-
         if raw_yields:
-            st.markdown("**Raw curve fetched** (the exact inputs to the calculation):")
             curve = pd.DataFrame(
                 [{"Maturity": _maturity_label(y), "Market yield (%)": round(raw_yields[y], 3)} for y in sorted(raw_yields)]
             )
             st.dataframe(curve, use_container_width=True, hide_index=True)
-            st.caption(f"Overnight anchor used: {anchor_rate:.2f}% (at horizon 0).")
+            st.caption(
+                f"Overnight anchor used: {anchor_rate:.2f}% (at horizon 0). Cross-check these "
+                "against the origin links on the Data sources tab."
+            )
         else:
-            st.markdown("**Raw curve fetched:** none — the curve source above returned no usable data.")
+            st.markdown("**Raw curve fetched:** none — see the Data sources tab for the exact source it's trying.")
 
+
+def _render_sources_tab():
+    """One consolidated listing of every live source for every bank, plus the
+    shared derivation method — registry-driven, so a newly added bank shows up
+    here automatically."""
+    st.subheader("Live data sources by central bank")
+    st.caption(
+        "Every number on the Policy paths tab comes from one of the sources below — all free "
+        "and keyless (the optional FRED macro model needs a free key). Tap any link to check "
+        "the raw numbers against the origin; the per-bank 'Raw inputs fetched' expander shows "
+        "exactly what was pulled on this load."
+    )
+    for spec in CENTRAL_BANKS:
+        st.markdown(f"#### {spec.label}")
+        for label, url in spec.sources:
+            st.markdown(f"- [{label}]({url})")
         st.markdown(
-            "**Method.** A yield to maturity *t* is (roughly) the market's expected *average* "
-            "overnight rate over the next *t* years, so the implied **forward** rate between two "
-            "maturities is the expected average over that future window:\n\n"
-            "```\nforward(a, b) = (yield_b × b − yield_a × a) / (b − a)\n```\n\n"
-            "Chaining these forwards across the maturities above, anchored at horizon 0 to the "
-            "overnight rate, traces the implied path; the meeting table reads that path at each "
-            "meeting date (interpolated). It is a curve-implied **proxy**: it carries a little "
-            "term premium and safe-haven/collateral richness, so it reads marginally more dovish "
-            "than a pure OIS/futures measure — right on direction and rough magnitude, not "
-            "basis-point-exact, and not a discrete hike/cut probability model."
+            f"- Meeting dates — scraped best-effort from the official calendar ({spec.calendar_hint}); "
+            "a maintained fallback list in `data/constants.py` is used when the scrape fails "
+            "(the Policy paths tab labels which one is active)"
         )
+        if spec.dot_plot:
+            st.markdown(
+                f"- Projection overlay — {spec.dot_label}, hand-entered from the official release "
+                "(federalreserve.gov)"
+            )
+        if spec.macro_series:
+            codes = ", ".join(f"`{code}`" for code in spec.macro_series.values())
+            st.markdown(f"- Own-model macro (FRED, optional key): {codes}")
 
-
-bank_label = st.radio("Central bank", [spec.label for spec in CENTRAL_BANKS], horizontal=True)
-spec = get_spec(bank_label)
-inputs = get_policy_inputs(spec.code)
-scraped_meetings = get_meeting_dates(spec.calendar_code)
-
-today = date.today()
-# Use scraped dates only if they actually contain upcoming meetings — a scrape
-# that returns only past meetings (seen with the ECB calendar) would otherwise
-# leave the table empty instead of falling back to the maintained list.
-scraped_upcoming = [d for d in scraped_meetings if d >= today]
-meetings = scraped_upcoming or spec.meeting_fallback
-meeting_source = (
-    "live from the official calendar"
-    if scraped_upcoming
-    else f"maintained fallback list (verify against {spec.calendar_hint})"
-)
-
-# A failed fetch must not sit in the cache for its full TTL looking permanent
-# (one bad FRED call used to pin "unavailable" for an hour on the deployed
-# app) — clear so the next interaction retries.
-if not inputs.yields:
-    get_policy_inputs.clear()
-if not scraped_upcoming:
-    get_meeting_dates.clear()
-
-st.caption(
-    "Data sources — "
-    + " · ".join(inputs.status)
-    + f" · Meetings: {'official calendar' if scraped_upcoming else 'fallback list'}"
-)
-
-# Anchor the path at real data only: the live overnight rate when a feed
-# provides it, otherwise the shortest real curve yield (e.g. BoJ, which has no
-# free overnight feed). No hardcoded rate is ever used.
-if inputs.anchor_rate is not None:
-    anchor_default = inputs.anchor_rate
-    anchor_metric_label = spec.anchor_metric_label
-elif inputs.yields:
-    shortest = min(inputs.yields)
-    anchor_default = inputs.yields[shortest]
-    anchor_metric_label = f"Front rate ({_maturity_label(shortest)} yield)"
-else:
-    anchor_default = 0.0
-    anchor_metric_label = spec.anchor_metric_label
-
-with st.sidebar:
-    anchor = st.number_input(
-        spec.anchor_label,
-        min_value=-1.0,
-        max_value=10.0,
-        value=float(anchor_default),
-        step=0.01,
-        format="%.2f",
-        key=f"{spec.code}_anchor",
-        help="Anchors the front of the implied path. Defaults to the live overnight rate, "
-        "or the shortest real curve yield when no overnight feed exists; override if needed.",
+    st.markdown("---")
+    st.markdown(
+        "**How the market-implied path is derived.** A yield to maturity *t* is (roughly) the "
+        "market's expected *average* overnight rate over the next *t* years, so the implied "
+        "**forward** rate between two maturities is the expected average over that future "
+        "window:\n\n"
+        "```\nforward(a, b) = (yield_b × b − yield_a × a) / (b − a)\n```\n\n"
+        "Chaining these forwards across the fetched maturities, anchored at horizon 0 to the "
+        "overnight rate, traces the implied path; the meeting table reads that path at each "
+        "meeting date (interpolated). It is a curve-implied **proxy**: it carries a little term "
+        "premium and safe-haven/collateral richness, so it reads marginally more dovish than a "
+        "pure OIS/futures measure — right on direction and rough magnitude, not "
+        "basis-point-exact, and not a discrete hike/cut probability model."
     )
-    compare_on = st.checkbox(
-        "Compare to a previous date",
-        key=f"{spec.code}_compare_on",
-        help="Overlay the implied path as it was priced on an earlier date to see how expectations shifted.",
+    st.caption(
+        "Macro-series caveat: US codes (core PCE, UNRATE, NFCI) are first-rate; euro-area/UK/"
+        "Japan currently use best-effort codes (headline CPI, OECD unemployment) — treat their "
+        "model signals as indicative until upgraded."
     )
-    compare_date = None
-    if compare_on:
-        earliest = min(inputs.history) if inputs.history else today - timedelta(days=30)
-        compare_date = st.date_input(
-            "As-of date",
-            value=max(earliest, today - timedelta(days=7)),
-            min_value=earliest,
-            max_value=today,
-            key=f"{spec.code}_compare_date",
+
+
+tab_paths, tab_sources, tab_model = st.tabs(["Policy paths", "Data sources", "Model rationale"])
+
+with tab_sources:
+    _render_sources_tab()
+
+with tab_model:
+    if _MODEL_DOC.exists():
+        st.markdown(_MODEL_DOC.read_text())
+    else:
+        st.info("Model documentation (docs/MODEL.md) not found in this deployment.")
+
+with tab_paths:
+    bank_label = st.radio("Central bank", [spec.label for spec in CENTRAL_BANKS], horizontal=True)
+    spec = get_spec(bank_label)
+    inputs = get_policy_inputs(spec.code)
+    scraped_meetings = get_meeting_dates(spec.calendar_code)
+
+    today = date.today()
+    # Use scraped dates only if they actually contain upcoming meetings — a
+    # scrape that returns only past meetings (seen with the ECB calendar) would
+    # otherwise leave the table empty instead of falling back to the list.
+    scraped_upcoming = [d for d in scraped_meetings if d >= today]
+    meetings = scraped_upcoming or spec.meeting_fallback
+    meeting_source = (
+        "live from the official calendar"
+        if scraped_upcoming
+        else f"maintained fallback list (verify against {spec.calendar_hint})"
+    )
+
+    # A failed fetch must not sit in the cache for its full TTL looking
+    # permanent (one bad FRED call used to pin "unavailable" for an hour on the
+    # deployed app) — clear so the next interaction retries.
+    if not inputs.yields:
+        get_policy_inputs.clear()
+    if not scraped_upcoming:
+        get_meeting_dates.clear()
+
+    st.caption(
+        "Data sources — "
+        + " · ".join(inputs.status)
+        + f" · Meetings: {'official calendar' if scraped_upcoming else 'fallback list'}"
+        + " · full listing on the Data sources tab"
+    )
+
+    # Anchor the path at real data only: the live overnight rate when a feed
+    # provides it, otherwise the shortest real curve yield (e.g. BoJ, which has
+    # no free overnight feed). No hardcoded rate is ever used.
+    if inputs.anchor_rate is not None:
+        anchor_default = inputs.anchor_rate
+        anchor_metric_label = spec.anchor_metric_label
+    elif inputs.yields:
+        shortest = min(inputs.yields)
+        anchor_default = inputs.yields[shortest]
+        anchor_metric_label = f"Front rate ({_maturity_label(shortest)} yield)"
+    else:
+        anchor_default = 0.0
+        anchor_metric_label = spec.anchor_metric_label
+
+    with st.sidebar:
+        anchor = st.number_input(
+            spec.anchor_label,
+            min_value=-1.0,
+            max_value=10.0,
+            value=float(anchor_default),
+            step=0.01,
+            format="%.2f",
+            key=f"{spec.code}_anchor",
+            help="Anchors the front of the implied path. Defaults to the live overnight rate, "
+            "or the shortest real curve yield when no overnight feed exists; override if needed.",
         )
-
-    st.divider()
-    st.markdown("**Own model (optional)**")
-    fred_key = st.text_input(
-        "FRED API key",
-        type="password",
-        key="fred_key",
-        help="Free at fred.stlouisfed.org (Account → API Keys). Activates the Taylor-gap "
-        "model overlay and the cross-market signals. Market paths work without it.",
-    )
-    model_a = st.slider("Inflation-gap weight (a)", 0.0, 1.5, 0.5, 0.05, key="model_a")
-    model_b = st.slider("Employment-gap weight (b)", 0.0, 1.5, 0.5, 0.05, key="model_b")
-    model_inertia = st.slider("Policy inertia (gap closed per meeting)", 0.05, 0.6, 0.25, 0.05, key="model_inertia")
-
-# Build the comparison path from the curve as it stood on (or just before) the
-# chosen date. It's anchored at the current overnight rate for simplicity — the
-# repricing story lives in the curve, and the overnight rate barely moves
-# between meetings.
-compare_path = compare_label = None
-if compare_on and compare_date:
-    if inputs.history:
-        as_of, curve = _curve_as_of(inputs.history, compare_date)
-        if curve:
-            compare_path = implied_forward_path(curve, anchor_rate=anchor)
-            compare_label = f"As priced on {as_of.strftime('%d %b %Y')}"
-    if compare_path is None:
-        st.caption("No stored curve is available on or before that date to compare against.")
-
-if not inputs.yields:
-    st.info(
-        f"The {spec.label} yield-curve feed isn't available right now — the source status "
-        "above says which feeds failed, and it will retry on the next interaction. Open the "
-        "panel below to see (and tap) the exact source it's trying."
-    )
-else:
-    path = implied_forward_path(inputs.yields, anchor_rate=anchor)
-    year_end_rate = implied_rate_at(path, (date(today.year, 12, 31) - today).days / 365.0)
-    metric_row(
-        [
-            (anchor_metric_label, f"{anchor:.2f}%"),
-            *inputs.metrics,
-            (
-                f"Implied by end-{today.year}",
-                f"{year_end_rate:.2f}%" if year_end_rate is not None else "N/A",
-                f"{(year_end_rate - anchor) * 100:+.0f} bps" if year_end_rate is not None else None,
-            ),
-        ]
-    )
-    # Own-model overlay (Taylor-gap + momentum) when a FRED key is provided.
-    market_df = _market_at_meetings(path, meetings, today)
-    model_df = merged = None
-    if fred_key and not market_df.empty:
-        macro = get_macro(spec.code, fred_key)
-        model_df = model_path(
-            list(market_df["meeting"]), current_rate=anchor, macro=macro,
-            inflation_target=spec.inflation_target, neutral=spec.neutral_nominal,
-            a=model_a, b=model_b, inertia=model_inertia,
+        compare_on = st.checkbox(
+            "Compare to a previous date",
+            key=f"{spec.code}_compare_on",
+            help="Overlay the implied path as it was priced on an earlier date to see how expectations shifted.",
         )
-        merged = merge_paths(market_df, model_df)
+        compare_date = None
+        if compare_on:
+            earliest = min(inputs.history) if inputs.history else today - timedelta(days=30)
+            compare_date = st.date_input(
+                "As-of date",
+                value=max(earliest, today - timedelta(days=7)),
+                min_value=earliest,
+                max_value=today,
+                key=f"{spec.code}_compare_date",
+            )
 
-    _render_policy_path(
-        path,
-        anchor,
-        meetings,
-        meeting_source,
-        meeting_label=spec.meeting_label,
-        yaxis_title=spec.yaxis_title,
-        dot_plot=spec.dot_plot,
-        dot_label=spec.dot_label,
-        compare_path=compare_path,
-        compare_label=compare_label,
-        model_df=model_df,
-    )
-    if compare_label:
-        st.caption(
-            "Dotted line: the implied path as priced on the selected date, using that day's "
-            "curve anchored at the current overnight rate. The repricing column shows how each "
-            "meeting's implied rate has moved since then."
+        st.divider()
+        st.markdown("**Own model (optional)**")
+        fred_key = st.text_input(
+            "FRED API key",
+            type="password",
+            key="fred_key",
+            help="Free at fred.stlouisfed.org (Account → API Keys). Activates the Taylor-gap "
+            "model overlay and the cross-market signals. Market paths work without it.",
         )
-    if merged is not None and not merged.empty:
-        sig = outright_signal(merged)
-        badge = {0: "⚪", 1: "🟡", 2: "🔴"}[sig["conviction"]]
-        st.markdown(f"#### {badge} Outright signal — {sig['signal']}")
-        st.caption(
-            f"Own model vs market: {sig['divergence_bp']:+.0f} bp average divergence over the next 3 "
-            f"meetings (model r* = {model_df['r_star'].iloc[0]:.2f}%). Dashed green line is the model path."
-        )
+        model_a = st.slider("Inflation-gap weight (a)", 0.0, 1.5, 0.5, 0.05, key="model_a")
+        model_b = st.slider("Employment-gap weight (b)", 0.0, 1.5, 0.5, 0.05, key="model_b")
+        model_inertia = st.slider("Policy inertia (gap closed per meeting)", 0.05, 0.6, 0.25, 0.05, key="model_inertia")
 
-_render_sources_panel(spec, inputs.yields, anchor, inputs.status)
+    # Build the comparison path from the curve as it stood on (or just before)
+    # the chosen date. It's anchored at the current overnight rate for
+    # simplicity — the repricing story lives in the curve, and the overnight
+    # rate barely moves between meetings.
+    compare_path = compare_label = None
+    if compare_on and compare_date:
+        if inputs.history:
+            as_of, curve = _curve_as_of(inputs.history, compare_date)
+            if curve:
+                compare_path = implied_forward_path(curve, anchor_rate=anchor)
+                compare_label = f"As priced on {as_of.strftime('%d %b %Y')}"
+        if compare_path is None:
+            st.caption("No stored curve is available on or before that date to compare against.")
 
-# --- Cross-market signals (needs the model, i.e. a FRED key, for 2+ banks) ---
-if fred_key:
-    st.divider()
-    st.subheader("Cross-market signals — model vs market")
-    divergences = {s.code: _bank_divergence(s, fred_key, model_a, model_b, model_inertia, today) for s in CENTRAL_BANKS}
-    valid = {k: v for k, v in divergences.items() if not pd.isna(v)}
-    if len(valid) >= 2:
-        table = build_signal_table(valid)
-        table["conviction"] = table["conviction"].map({0: "—", 1: "Medium", 2: "High"})
-        st.dataframe(
-            table.rename(columns={"type": "Type", "pair": "Pair", "signal": "Signal", "rel_divergence_bp": "Rel. divergence (bp)", "conviction": "Conviction"}),
-            use_container_width=True,
-            hide_index=True,
+    if not inputs.yields:
+        st.info(
+            f"The {spec.label} yield-curve feed isn't available right now — the source status "
+            "above says which feeds failed, and it will retry on the next interaction. The Data "
+            "sources tab lists (and links) the exact source it's trying."
         )
     else:
-        st.info("Need at least two banks with both a live curve and macro data for cross-market signals.")
-    st.caption(
-        "Signals are model-minus-market divergences — a research scaffold, not investment advice. "
-        "Euro-area/UK/Japan macro series are best-effort (headline CPI / OECD unemployment); verify "
-        "before relying on their signals. Validate everything against primary sources."
-    )
+        path = implied_forward_path(inputs.yields, anchor_rate=anchor)
+        year_end_rate = implied_rate_at(path, (date(today.year, 12, 31) - today).days / 365.0)
+        metric_row(
+            [
+                (anchor_metric_label, f"{anchor:.2f}%"),
+                *inputs.metrics,
+                (
+                    f"Implied by end-{today.year}",
+                    f"{year_end_rate:.2f}%" if year_end_rate is not None else "N/A",
+                    f"{(year_end_rate - anchor) * 100:+.0f} bps" if year_end_rate is not None else None,
+                ),
+            ]
+        )
+        # Own-model overlay (Taylor-gap + momentum) when a FRED key is provided.
+        market_df = _market_at_meetings(path, meetings, today)
+        model_df = merged = None
+        if fred_key and not market_df.empty:
+            macro = get_macro(spec.code, fred_key)
+            model_df = model_path(
+                list(market_df["meeting"]), current_rate=anchor, macro=macro,
+                inflation_target=spec.inflation_target, neutral=spec.neutral_nominal,
+                a=model_a, b=model_b, inertia=model_inertia,
+            )
+            merged = merge_paths(market_df, model_df)
+
+        _render_policy_path(
+            path,
+            anchor,
+            meetings,
+            meeting_source,
+            meeting_label=spec.meeting_label,
+            yaxis_title=spec.yaxis_title,
+            dot_plot=spec.dot_plot,
+            dot_label=spec.dot_label,
+            compare_path=compare_path,
+            compare_label=compare_label,
+            model_df=model_df,
+        )
+        if compare_label:
+            st.caption(
+                "Dotted line: the implied path as priced on the selected date, using that day's "
+                "curve anchored at the current overnight rate. The repricing column shows how "
+                "each meeting's implied rate has moved since then."
+            )
+        if merged is not None and not merged.empty:
+            sig = outright_signal(merged)
+            badge = {0: "⚪", 1: "🟡", 2: "🔴"}[sig["conviction"]]
+            st.markdown(f"#### {badge} Outright signal — {sig['signal']}")
+            st.caption(
+                f"Own model vs market: {sig['divergence_bp']:+.0f} bp average divergence over the next 3 "
+                f"meetings (model r* = {model_df['r_star'].iloc[0]:.2f}%). Dashed green line is the model "
+                "path — see the Model rationale tab for how it works and its limits."
+            )
+
+    _render_validation_expander(inputs.yields, anchor, inputs.status)
+
+    # --- Cross-market signals (needs the model, i.e. a FRED key, for 2+ banks) ---
+    if fred_key:
+        st.divider()
+        st.subheader("Cross-market signals — model vs market")
+        divergences = {s.code: _bank_divergence(s, fred_key, model_a, model_b, model_inertia, today) for s in CENTRAL_BANKS}
+        valid = {k: v for k, v in divergences.items() if not pd.isna(v)}
+        if len(valid) >= 2:
+            table = build_signal_table(valid)
+            table["conviction"] = table["conviction"].map({0: "—", 1: "Medium", 2: "High"})
+            st.dataframe(
+                table.rename(columns={"type": "Type", "pair": "Pair", "signal": "Signal", "rel_divergence_bp": "Rel. divergence (bp)", "conviction": "Conviction"}),
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.info("Need at least two banks with both a live curve and macro data for cross-market signals.")
+        st.caption(
+            "Signals are model-minus-market divergences — a research scaffold, not investment "
+            "advice (see the Model rationale tab for limitations). Validate everything against "
+            "primary sources."
+        )

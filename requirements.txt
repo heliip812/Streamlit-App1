@@ -9,4 +9,4 @@ fredapi>=0.5
 
 # Rebuild marker: bump this line to force Streamlit Cloud to reinstall the
 # environment and start a clean deploy (clears stale-build state without a
-# manual reboot). Last: own-model (Taylor-gap) + divergence signals overlay.
+# manual reboot). Last: tabs (paths / data sources / model rationale) + MODEL.md.
