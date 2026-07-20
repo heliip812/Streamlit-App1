@@ -47,7 +47,8 @@ def _cfg() -> dict | None:
         return {
             "bucket": secrets["snapshots_bucket"],
             "prefix": secrets.get("snapshots_prefix", "cb-dashboard").strip("/"),
-            "region": secrets.get("region"),
+            # same key names the existing [aws] DTCC-cache secrets use
+            "region": secrets.get("region_name") or secrets.get("region"),
             "access_key": secrets.get("access_key_id"),
             "secret_key": secrets.get("secret_access_key"),
         }
